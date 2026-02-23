@@ -2,178 +2,240 @@ import streamlit as st
 import pandas as pd
 import math
 import io
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
 
 # --- NASTAVENÍ STRÁNKY ---
 st.set_page_config(page_title="Stavinvest Konfigurátor", page_icon="✂️", layout="wide")
-st.title("✂️ Stavinvest Konfigurátor")
+st.title("✂️ Stavinvest Konfigurátor vč. 2D Nákresu")
 
-# --- INICIALIZACE GLOBÁLNÍCH NASTAVENÍ (Z listu Nastavení) ---
+# ==========================================
+# 2D GUILLOTINE BIN PACKING ALGORITMUS
+# ==========================================
+class FreeRect:
+    def __init__(self, x, y, w, h):
+        self.x = x
+        self.y = y
+        self.w = w
+        self.h = h
+
+def pack_guillotine(items, coil_w):
+    # Seřazení od nejdelších a nejširších
+    items.sort(key=lambda x: (x['L'], x['rš']), reverse=True)
+    free_rects = [FreeRect(0, 0, 9999999, coil_w)] # Nekonečný svitek
+    placed = []
+    
+    for item in items:
+        best_idx = -1
+        best_fr = None
+        
+        # Nalezení nejlepšího volného místa
+        for i, fr in enumerate(free_rects):
+            if fr.w >= item['L'] and fr.h >= item['rš']:
+                if best_fr is None or fr.h < best_fr.h:
+                    best_fr = fr
+                    best_idx = i
+        
+        if best_fr is None:
+            continue
+            
+        item['x'] = best_fr.x
+        item['y'] = best_fr.y
+        placed.append(item)
+        
+        # Gilotinový řez - rozdělení zbytku prostoru
+        w_left = best_fr.w - item['L']
+        h_left = best_fr.h - item['rš']
+        
+        fr_top = FreeRect(best_fr.x, best_fr.y + item['rš'], item['L'], h_left)
+        fr_right = FreeRect(best_fr.x + item['L'], best_fr.y, w_left, best_fr.h)
+        
+        free_rects.pop(best_idx)
+        if fr_top.w > 0 and fr_top.h > 0: free_rects.append(fr_top)
+        if fr_right.w > 0 and fr_right.h > 0: free_rects.append(fr_right)
+        
+        # Třídění volných míst zleva doprava
+        free_rects.sort(key=lambda f: (f.x, f.y))
+        
+    return placed
+
+# --- INICIALIZACE NASTAVENÍ ---
 if 'config' not in st.session_state:
-    st.session_state.config = {
-        "cena_ohyb": 10.0,
-        "max_delka": 4000,
-        "presah": 40
-    }
+    st.session_state.config = {"cena_ohyb": 10.0, "max_delka": 4000, "presah": 40}
 
-# --- INICIALIZACE DAT (Z listu Data) ---
 if 'materialy_df' not in st.session_state:
     st.session_state.materialy_df = pd.DataFrame([
-        {"Materiál": "FeZn svitek 0,55 mm", "Šířka (mm)": 1250, "Cena/m2": 200},
-        {"Materiál": "FeZn svitek lak PES 0,5 mm", "Šířka (mm)": 1250, "Cena/m2": 270},
-        {"Materiál": "Comax FALC 0,7mm PES", "Šířka (mm)": 1250, "Cena/m2": 550},
-        {"Materiál": "Al přírodní 0,6 mm", "Šířka (mm)": 1000, "Cena/m2": 320},
-        {"Materiál": "Měď 0,55 mm", "Šířka (mm)": 670, "Cena/m2": 1200},
-        {"Materiál": "Titanzinek 0,6 mm", "Šířka (mm)": 1000, "Cena/m2": 650}
+        {"Materiál": "FeZn svitek 0,55 mm", "Šířka (mm)": 1250, "Cena/m2": 200, "Max délka tabule (mm)": 10000},
+        {"Materiál": "FeZn svitek lak PES 0,5 mm", "Šířka (mm)": 1250, "Cena/m2": 270, "Max délka tabule (mm)": 10000},
+        {"Materiál": "Comax FALC 0,7mm PES", "Šířka (mm)": 1250, "Cena/m2": 550, "Max délka tabule (mm)": 10000},
+        {"Materiál": "Titanzinek 0,6 mm", "Šířka (mm)": 1000, "Cena/m2": 650, "Max délka tabule (mm)": 2000}
     ])
 
 if 'prvky_df' not in st.session_state:
-    # Přesné názvy dle vašeho Excelu
     st.session_state.prvky_df = pd.DataFrame([
         {"Typ prvku": "závětrná lišta spodní r.š.250", "RŠ (mm)": 250, "Ohyby": 6},
-        {"Typ prvku": "závětrná lišta horní r.š.312", "RŠ (mm)": 312, "Ohyby": 5},
-        {"Typ prvku": "závětrná lišta pultová r.š.330", "RŠ (mm)": 330, "Ohyby": 4},
         {"Typ prvku": "okapnice pod fólii r.š.200", "RŠ (mm)": 200, "Ohyby": 2},
-        {"Typ prvku": "okapnice okapová r.š.250", "RŠ (mm)": 250, "Ohyby": 3},
         {"Typ prvku": "parapet r.š.330", "RŠ (mm)": 330, "Ohyby": 3},
-        {"Typ prvku": "lemování ke zdi r.š.312", "RŠ (mm)": 312, "Ohyby": 3},
-        {"Typ prvku": "úžlabí r.š.500", "RŠ (mm)": 500, "Ohyby": 4},
-        {"Typ prvku": "hřebenáč r.š.412", "RŠ (mm)": 412, "Ohyby": 4}
+        {"Typ prvku": "úžlabí r.š.500", "RŠ (mm)": 500, "Ohyby": 4}
     ])
 
 if 'zakazka' not in st.session_state:
     st.session_state.zakazka = []
 
-# Pomocné slovníky pro výpočty
-materialy_dict = {row["Materiál"]: {"šířka": row["Šířka (mm)"], "cena_m2": row["Cena/m2"]} 
-                  for _, row in st.session_state.materialy_df.iterrows()}
-prvky_dict = {row["Typ prvku"]: {"rš": row["RŠ (mm)"], "ohyby": row["Ohyby"]} 
-              for _, row in st.session_state.prvky_df.iterrows()}
+mat_dict = {r["Materiál"]: r for _, r in st.session_state.materialy_df.iterrows()}
+prv_dict = {r["Typ prvku"]: r for _, r in st.session_state.prvky_df.iterrows()}
 
 # --- ZÁLOŽKY ---
-tab_kalk, tab_data, tab_nastaveni = st.tabs(["🧮 Kalkulátor", "⚙️ Data (Ceník)", "🔧 Nastavení"])
+tab_kalk, tab_nakres, tab_data, tab_nastaveni = st.tabs(["🧮 Kalkulátor", "📐 Nákres 2D Řezů", "⚙️ Data (Ceník)", "🔧 Nastavení"])
 
 # ==========================================
 # ZÁLOŽKA: NASTAVENÍ
 # ==========================================
 with tab_nastaveni:
-    st.header("🔧 Globální parametry výroby")
-    st.write("Tyto hodnoty ovlivňují výpočet ceny práce a dělení plechů.")
-    
-    col_n1, col_n2 = st.columns(2)
-    with col_n1:
-        st.session_state.config["cena_ohyb"] = st.number_input("Cena za 1 ohyb (Kč)", value=st.session_state.config["cena_ohyb"])
-        st.session_state.config["presah"] = st.number_input("Přesah při spojování (mm)", value=st.session_state.config["presah"])
-    with col_n2:
-        st.session_state.config["max_delka"] = st.number_input("Maximální délka ohýbačky (mm)", value=st.session_state.config["max_delka"])
+    st.header("🔧 Globální parametry")
+    c1, c2 = st.columns(2)
+    with c1:
+        st.session_state.config["cena_ohyb"] = st.number_input("Cena za ohyb (Kč)", value=float(st.session_state.config["cena_ohyb"]))
+        st.session_state.config["presah"] = st.number_input("Přesah spojů (mm)", value=int(st.session_state.config["presah"]))
+    with c2:
+        st.session_state.config["max_delka"] = st.number_input("Délka ohýbačky (mm)", value=int(st.session_state.config["max_delka"]))
 
 # ==========================================
-# ZÁLOŽKA: DATA (CENÍK)
+# ZÁLOŽKA: DATA
 # ==========================================
 with tab_data:
-    st.header("⚙️ Správa materiálů a prvků")
-    col_d1, col_d2 = st.columns(2)
-    with col_d1:
-        st.subheader("Svitky")
-        st.session_state.materialy_df = st.data_editor(st.session_state.materialy_df, num_rows="dynamic", key="ed_mat")
-    with col_d2:
-        st.subheader("Klempířské prvky")
-        st.session_state.prvky_df = st.data_editor(st.session_state.prvky_df, num_rows="dynamic", key="ed_prv")
+    st.header("⚙️ Správa dat")
+    st.session_state.materialy_df = st.data_editor(st.session_state.materialy_df, num_rows="dynamic", key="em")
+    st.session_state.prvky_df = st.data_editor(st.session_state.prvky_df, num_rows="dynamic", key="ep")
 
 # ==========================================
 # ZÁLOŽKA: KALKULÁTOR
 # ==========================================
 with tab_kalk:
-    col_in, col_list = st.columns([1, 2])
-    
+    col_in, col_res = st.columns([1, 2])
     with col_in:
-        st.header("Vložit položku")
-        v_prvek = st.selectbox("Vyberte prvek (vč. RŠ)", list(prvky_dict.keys()))
-        v_mat = st.selectbox("Vyberte materiál", list(materialy_dict.keys()))
-        v_m = st.number_input("Délka celkem (m)", min_value=0.1, value=2.0)
-        v_ks = st.number_input("Počet kusů", min_value=1, value=1)
+        st.header("Zadání")
+        v_prvek = st.selectbox("Prvek", list(prv_dict.keys()))
+        v_mat = st.selectbox("Materiál", list(mat_dict.keys()))
+        v_m = st.number_input("Délka (m)", value=2.5, step=0.1)
+        v_ks = st.number_input("Kusů", min_value=1, value=1)
         
-        if st.button("➕ Přidat", type="primary", use_container_width=True):
-            st.session_state.zakazka.append({
-                "Prvek": v_prvek, "Materiál": v_mat, "Metrů": v_m, "Kusů": v_ks,
-                "RŠ": prvky_dict[v_prvek]["rš"], "Ohybů": prvky_dict[v_prvek]["ohyby"]
-            })
+        if st.button("➕ Přidat do zakázky", type="primary", use_container_width=True):
+            st.session_state.zakazka.append({"Prvek": v_prvek, "Materiál": v_mat, "Metrů": v_m, "Kusů": v_ks})
             st.rerun()
-        
-        if st.button("🗑️ Vymazat seznam", use_container_width=True):
+        if st.button("🗑️ Smazat vše", use_container_width=True):
             st.session_state.zakazka = []
+            st.session_state.vysledky_packing = {}
             st.rerun()
 
-    with col_list:
-        st.header("Aktuální zakázka")
+    with col_res:
+        st.header("Výpočet a Optimalizace")
         if st.session_state.zakazka:
-            df_zak = pd.DataFrame(st.session_state.zakazka)
-            st.table(df_zak[["Prvek", "Materiál", "Metrů", "Kusů"]])
+            st.table(pd.DataFrame(st.session_state.zakazka))
             
-            if st.button("🚀 SPOČÍTAT", type="primary"):
+            if st.button("🚀 SPOČÍTAT 2D", type="primary", use_container_width=True):
                 st.divider()
-                
-                fyzicke_kusy = []
+                fyzicke_kusy = {}
                 cena_prace = 0
-                config = st.session_state.config
+                conf = st.session_state.config
                 
+                # Příprava dílů pro jednotlivé materiály
                 for p in st.session_state.zakazka:
+                    m_data = mat_dict[p["Materiál"]]
+                    p_data = prv_dict[p["Prvek"]]
                     L_mm = p["Metrů"] * 1000
-                    # Výpočet segmentů dle délky stroje a přesahu
-                    if L_mm <= config["max_delka"]:
-                        seg = 1
-                        L_seg = L_mm
-                    else:
-                        seg = math.ceil((L_mm - config["presah"]) / (config["max_delka"] - config["presah"]))
-                        L_seg = (L_mm + (seg - 1) * config["presah"]) / seg
                     
-                    cena_prace += (p["Ohybů"] * config["cena_ohyb"]) * seg * p["Kusů"]
+                    if p_data["RŠ (mm)"] > m_data["Šířka (mm)"]:
+                        st.error(f"CHYBA: Prvek '{p['Prvek']}' je širší než svitek {p['Materiál']}!")
+                        continue
+                        
+                    seg = 1 if L_mm <= conf["max_delka"] else math.ceil((L_mm - conf["presah"]) / (conf["max_delka"] - conf["presah"]))
+                    L_seg = (L_mm + (seg - 1) * conf["presah"]) / seg
                     
+                    if L_seg > m_data["Max délka tabule (mm)"]:
+                        st.error(f"CHYBA: Segment ({L_seg:.0f}mm) je delší než dostupná tabule materiálu {p['Materiál']}!")
+                        continue
+
+                    cena_prace += (p_data["Ohyby"] * conf["cena_ohyb"]) * seg * p["Kusů"]
+                    
+                    if p["Materiál"] not in fyzicke_kusy:
+                        fyzicke_kusy[p["Materiál"]] = []
+                        
                     for _ in range(int(p["Kusů"] * seg)):
-                        fyzicke_kusy.append({
-                            "mat": p["Materiál"], "L": L_seg, "rš": p["RŠ"],
-                            "w": materialy_dict[p["Materiál"]]["šířka"],
-                            "c_m2": materialy_dict[p["Materiál"]]["cena_m2"]
+                        fyzicke_kusy[p["Materiál"]].append({
+                            "Prvek": p['Prvek'], "L": L_seg, "rš": p_data["RŠ (mm)"]
                         })
 
-                # Tetris Optimalizace
-                fyzicke_kusy = sorted(fyzicke_kusy, key=lambda x: x['L'], reverse=True)
-                odvinuto = []
-                for k in fyzicke_kusy:
-                    placed = False
-                    for pas in odvinuto:
-                        if pas['mat'] == k['mat'] and k['L'] <= pas['L'] and k['rš'] <= pas['zbyva']:
-                            pas['zbyva'] -= k['rš']
-                            placed = True
-                            break
-                    if not placed:
-                        odvinuto.append({"mat": k["mat"], "L": k["L"], "zbyva": k["w"] - k["rš"], "sirka": k["w"], "c_m2": k["c_m2"]})
+                # Vlastní skládání pro každý materiál
+                vysledky_packing = {}
+                c_mat = 0
+                sumar = {}
                 
-                # Souhrn
-                stats = {}
-                cena_mat = 0
-                for pas in odvinuto:
-                    m2 = (pas["L"]/1000) * (pas["sirka"]/1000)
-                    cena = m2 * pas["c_m2"]
-                    cena_mat += cena
-                    if pas["mat"] not in stats: stats[pas["mat"]] = {"Pásy (ks)": 0, "Metrů": 0.0, "Kč": 0.0}
-                    stats[pas["mat"]]["Pásy (ks)"] += 1
-                    stats[pas["mat"]]["Metrů"] += pas["L"]/1000
-                    stats[pas["mat"]]["Kč"] += cena
+                for mat_name, items in fyzicke_kusy.items():
+                    w_coil = mat_dict[mat_name]["Šířka (mm)"]
+                    cena_m2 = mat_dict[mat_name]["Cena/m2"]
+                    
+                    placed = pack_guillotine(items, w_coil)
+                    
+                    if placed:
+                        max_x = max([p['x'] + p['L'] for p in placed])
+                        odvinuto_m = max_x / 1000
+                        cena_za_svitek = odvinuto_m * (w_coil / 1000) * cena_m2
+                        
+                        vysledky_packing[mat_name] = {
+                            "w_coil": w_coil, "max_x": max_x, "placed": placed
+                        }
+                        
+                        c_mat += cena_za_svitek
+                        sumar[mat_name] = {"Odvinout (m)": odvinuto_m, "Cena": cena_za_svitek}
                 
-                st.subheader("Souhrn materiálu")
-                st.dataframe(pd.DataFrame.from_dict(stats, orient='index').style.format({"Metrů": "{:.2f}", "Kč": "{:.2f} Kč"}))
+                st.session_state.vysledky_packing = vysledky_packing
+                
+                st.subheader("Souhrnná tabulka")
+                st.dataframe(pd.DataFrame.from_dict(sumar, orient='index').style.format({"Odvinout (m)": "{:.2f}", "Cena": "{:.2f} Kč"}))
                 
                 r1, r2, r3 = st.columns(3)
-                r1.metric("Materiál", f"{cena_mat:,.2f} Kč")
+                r1.metric("Materiál", f"{c_mat:,.2f} Kč")
                 r2.metric("Práce", f"{cena_prace:,.2f} Kč")
-                r3.metric("CELKEM (vč. DPH)", f"{(cena_mat + cena_prace)*1.21:,.2f} Kč")
+                r3.metric("CELKEM (vč. DPH)", f"{(c_mat + cena_prace)*1.21:,.2f} Kč")
 
-                # Export
-                buf = io.BytesIO()
-                with pd.ExcelWriter(buf, engine='openpyxl') as wr:
-                    df_zak.to_excel(wr, sheet_name='Zadání', index=False)
-                    pd.DataFrame.from_dict(stats, orient='index').to_excel(wr, sheet_name='Souhrn')
-                st.download_button("📥 Exportovat do Excelu", buf.getvalue(), "kalkulace.xlsx")
-                st.button("🖨️ Tisk (Ctrl+P)", on_click=None)
-        else:
-            st.info("Přidejte položky pro výpočet.")
+# ==========================================
+# ZÁLOŽKA: NÁKRES
+# ==========================================
+with tab_nakres:
+    st.header("📐 Schéma řezů na svitku")
+    st.write("Díky 2D Gilotinovému algoritmu aplikace minimalizuje prořez a zajistí, že všechny řezy půjdou provést na tabulových nůžkách.")
+    
+    if 'vysledky_packing' in st.session_state and st.session_state.vysledky_packing:
+        barvy = ['#3498db', '#e74c3c', '#2ecc71', '#f1c40f', '#9b59b6', '#e67e22', '#1abc9c']
+        
+        for mat_name, data in st.session_state.vysledky_packing.items():
+            st.subheader(f"Materiál: {mat_name}")
+            st.write(f"Celkem odvinout ze svitku: **{data['max_x'] / 1000:.2f} m**")
+            
+            fig, ax = plt.subplots(figsize=(12, 3))
+            
+            # Kreslení obrysu svitku
+            ax.add_patch(patches.Rectangle((0, 0), data['max_x'], data['w_coil'], fill=False, edgecolor='black', linewidth=2))
+            
+            # Přiřazení barev
+            unikatni_prvky = list(set([p['Prvek'] for p in data['placed']]))
+            color_map = {prvek: barvy[i % len(barvy)] for i, prvek in enumerate(unikatni_prvky)}
+            
+            # Kreslení prvků
+            for p in data['placed']:
+                ax.add_patch(patches.Rectangle((p['x'], p['y']), p['L'], p['rš'], facecolor=color_map[p['Prvek']], edgecolor='black', alpha=0.8))
+                
+                # Text uvnitř obdélníku
+                font_size = 8 if p['L'] > 500 else 6
+                ax.text(p['x'] + p['L']/2, p['y'] + p['rš']/2, f"{p['Prvek']}\n({p['L']:.0f}x{p['rš']})", 
+                        ha='center', va='center', fontsize=font_size, color='white', weight='bold')
+            
+            ax.set_xlim(0, data['max_x'] * 1.02)
+            ax.set_ylim(0, data['w_coil'] * 1.05)
+            ax.set_xlabel("Délka odvinutého svitku (mm)")
+            ax.set_ylabel("Šířka svitku (mm)")
+            st.pyplot(fig)
+            st.divider()
+    else:
+        st.info("Nejdříve proveďte výpočet v záložce Kalkulátor.")
