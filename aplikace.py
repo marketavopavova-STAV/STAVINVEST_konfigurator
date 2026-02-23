@@ -10,7 +10,7 @@ st.set_page_config(page_title="Stavinvest Konfigurátor", page_icon="✂️", la
 st.title("✂️ Stavinvest Konfigurátor vč. 2D Nákresu")
 
 # ==========================================
-# 2D GUILLOTINE BIN PACKING ALGORITMUS
+# 2D GUILLOTINE BIN PACKING (Více svitků/tabulí)
 # ==========================================
 class FreeRect:
     def __init__(self, x, y, w, h):
@@ -19,43 +19,67 @@ class FreeRect:
         self.w = w
         self.h = h
 
-def pack_guillotine(items, coil_w):
+def pack_guillotine_multibin(items, coil_w, max_l):
+    # Seřazení kusů
     items.sort(key=lambda x: (x['L'], x['rš']), reverse=True)
-    free_rects = [FreeRect(0, 0, 9999999, coil_w)]
-    placed = []
+    bins = []
     
     for item in items:
-        best_idx = -1
-        best_fr = None
-        for i, fr in enumerate(free_rects):
-            if fr.w >= item['L'] and fr.h >= item['rš']:
-                if best_fr is None or fr.h < best_fr.h:
-                    best_fr = fr
-                    best_idx = i
-        if best_fr is None:
-            continue
+        placed = False
+        # Pokus o umístění do už existujících rozdělaných svitků
+        for b in bins:
+            best_idx = -1
+            best_fr = None
+            for i, fr in enumerate(b['free_rects']):
+                if fr.w >= item['L'] and fr.h >= item['rš']:
+                    if best_fr is None or fr.h < best_fr.h:
+                        best_fr = fr
+                        best_idx = i
             
-        item['x'] = best_fr.x
-        item['y'] = best_fr.y
-        placed.append(item)
-        
-        w_left = best_fr.w - item['L']
-        h_left = best_fr.h - item['rš']
-        fr_top = FreeRect(best_fr.x, best_fr.y + item['rš'], item['L'], h_left)
-        fr_right = FreeRect(best_fr.x + item['L'], best_fr.y, w_left, best_fr.h)
-        
-        free_rects.pop(best_idx)
-        if fr_top.w > 0 and fr_top.h > 0: free_rects.append(fr_top)
-        if fr_right.w > 0 and fr_right.h > 0: free_rects.append(fr_right)
-        
-        free_rects.sort(key=lambda f: (f.x, f.y))
-    return placed
+            if best_fr is not None:
+                item['x'] = best_fr.x
+                item['y'] = best_fr.y
+                b['placed'].append(item)
+                
+                w_left = best_fr.w - item['L']
+                h_left = best_fr.h - item['rš']
+                fr_top = FreeRect(best_fr.x, best_fr.y + item['rš'], item['L'], h_left)
+                fr_right = FreeRect(best_fr.x + item['L'], best_fr.y, w_left, best_fr.h)
+                
+                b['free_rects'].pop(best_idx)
+                if fr_top.w > 0 and fr_top.h > 0: b['free_rects'].append(fr_top)
+                if fr_right.w > 0 and fr_right.h > 0: b['free_rects'].append(fr_right)
+                
+                b['free_rects'].sort(key=lambda f: (f.x, f.y))
+                placed = True
+                break
+                
+        # Pokud se kus už nevejde, založíme nový svitek (Bin)
+        if not placed:
+            actual_max_l = max(max_l, item['L']) # Pro jistotu, kdyby někdo zadal prvek delší než max limit
+            new_bin = {'free_rects': [FreeRect(0, 0, actual_max_l, coil_w)], 'placed': [], 'w_coil': coil_w}
+            item['x'] = 0
+            item['y'] = 0
+            new_bin['placed'].append(item)
+            
+            w_left = actual_max_l - item['L']
+            h_left = coil_w - item['rš']
+            fr_top = FreeRect(0, item['rš'], item['L'], h_left)
+            fr_right = FreeRect(item['L'], 0, w_left, coil_w)
+            
+            if fr_top.w > 0 and fr_top.h > 0: new_bin['free_rects'].append(fr_top)
+            if fr_right.w > 0 and fr_right.h > 0: new_bin['free_rects'].append(fr_right)
+            
+            new_bin['free_rects'].sort(key=lambda f: (f.x, f.y))
+            bins.append(new_bin)
+            
+    return bins
 
 # --- INICIALIZACE NASTAVENÍ ---
 if 'config' not in st.session_state:
     st.session_state.config = {"cena_ohyb": 10.0, "max_delka": 4000, "presah": 40}
 
-# --- NAČTENÍ KOMPLETNÍCH DAT Z VAŠEHO EXCELU ---
+# --- NAČTENÍ KOMPLETNÍCH DAT Z EXCELU ---
 if 'materialy_df' not in st.session_state:
     st.session_state.materialy_df = pd.DataFrame([
         {"Materiál": "FeZn svitek 0,55 mm", "Šířka (mm)": 1250, "Cena/m2": 200.0, "Max délka tabule (mm)": 10000},
@@ -134,6 +158,7 @@ with tab_nastaveni:
 # ==========================================
 with tab_data:
     st.header("⚙️ Správa dat")
+    st.info("Zde můžete přidávat materiály, upravovat jejich ceny i limitní délku (Max délka tabule).")
     st.session_state.materialy_df = st.data_editor(st.session_state.materialy_df, num_rows="dynamic", key="em", use_container_width=True)
     st.session_state.prvky_df = st.data_editor(st.session_state.prvky_df, num_rows="dynamic", key="ep", use_container_width=True)
 
@@ -181,7 +206,7 @@ with tab_kalk:
                     L_seg = (L_mm + (seg - 1) * conf["presah"]) / seg
                     
                     if L_seg > m_data["Max délka tabule (mm)"]:
-                        st.error(f"CHYBA: Segment ({L_seg:.0f}mm) je delší než dostupná tabule materiálu {p['Materiál']}!")
+                        st.error(f"CHYBA: Váš prvek potřebuje segment dlouhý {L_seg:.0f} mm, ale {p['Materiál']} má max. délku {m_data['Max délka tabule (mm)']} mm!")
                         continue
 
                     cena_prace += (p_data["Ohyby"] * conf["cena_ohyb"]) * seg * p["Kusů"]
@@ -201,58 +226,73 @@ with tab_kalk:
                 for mat_name, items in fyzicke_kusy.items():
                     w_coil = mat_dict[mat_name]["Šířka (mm)"]
                     cena_m2 = mat_dict[mat_name]["Cena/m2"]
+                    max_tab_len = mat_dict[mat_name]["Max délka tabule (mm)"]
                     
-                    placed = pack_guillotine(items, w_coil)
+                    bins = pack_guillotine_multibin(items, w_coil, max_tab_len)
                     
-                    if placed:
-                        max_x = max([p['x'] + p['L'] for p in placed])
-                        odvinuto_m = max_x / 1000
-                        cena_za_svitek = odvinuto_m * (w_coil / 1000) * cena_m2
+                    if bins:
+                        tot_odvinuto = 0
+                        tot_cena = 0
+                        vysledky_packing[mat_name] = bins
                         
-                        vysledky_packing[mat_name] = {"w_coil": w_coil, "max_x": max_x, "placed": placed}
-                        c_mat += cena_za_svitek
-                        sumar[mat_name] = {"Odvinout (m)": odvinuto_m, "Cena": cena_za_svitek}
+                        for b in bins:
+                            max_x = max([p['x'] + p['L'] for p in b['placed']])
+                            b['odvinuto_mm'] = max_x
+                            odvinuto_m = max_x / 1000
+                            cena_za_svitek = odvinuto_m * (w_coil / 1000) * cena_m2
+                            
+                            tot_odvinuto += odvinuto_m
+                            tot_cena += cena_za_svitek
+                            
+                        c_mat += tot_cena
+                        sumar[mat_name] = {"Pásů/Tabulí (ks)": len(bins), "Celkem odvinout (m)": tot_odvinuto, "Cena": tot_cena}
                 
                 st.session_state.vysledky_packing = vysledky_packing
-                st.subheader("Souhrnná tabulka")
-                st.dataframe(pd.DataFrame.from_dict(sumar, orient='index').style.format({"Odvinout (m)": "{:.2f}", "Cena": "{:.2f} Kč"}))
+                st.subheader("Souhrnná tabulka materiálu")
+                st.dataframe(pd.DataFrame.from_dict(sumar, orient='index').style.format({"Celkem odvinout (m)": "{:.2f}", "Cena": "{:.2f} Kč"}))
                 
                 r1, r2, r3 = st.columns(3)
                 r1.metric("Materiál", f"{c_mat:,.2f} Kč")
-                r2.metric("Práce", f"{cena_prace:,.2f} Kč")
-                r3.metric("CELKEM (vč. DPH)", f"{(c_mat + cena_prace)*1.21:,.2f} Kč")
+                r2.metric("Práce (Ohyby)", f"{cena_prace:,.2f} Kč")
+                r3.metric("CELKEM ZAKÁZKA (vč. DPH)", f"{(c_mat + cena_prace)*1.21:,.2f} Kč")
 
 # ==========================================
 # ZÁLOŽKA: NÁKRES
 # ==========================================
 with tab_nakres:
     st.header("📐 Schéma řezů na svitku")
-    st.write("Díky 2D Gilotinovému algoritmu aplikace minimalizuje prořez.")
+    st.write("Aplikace nyní hlídá **Maximální délku tabule** a pokud je překročena, automaticky založí nový svitek.")
     
     if 'vysledky_packing' in st.session_state and st.session_state.vysledky_packing:
         barvy = ['#3498db', '#e74c3c', '#2ecc71', '#f1c40f', '#9b59b6', '#e67e22', '#1abc9c']
         
-        for mat_name, data in st.session_state.vysledky_packing.items():
+        for mat_name, bins in st.session_state.vysledky_packing.items():
             st.subheader(f"Materiál: {mat_name}")
-            st.write(f"Celkem odvinout ze svitku: **{data['max_x'] / 1000:.2f} m**")
             
-            fig, ax = plt.subplots(figsize=(12, 3))
-            ax.add_patch(patches.Rectangle((0, 0), data['max_x'], data['w_coil'], fill=False, edgecolor='black', linewidth=2))
-            
-            unikatni_prvky = list(set([p['Prvek'] for p in data['placed']]))
-            color_map = {prvek: barvy[i % len(barvy)] for i, prvek in enumerate(unikatni_prvky)}
-            
-            for p in data['placed']:
-                ax.add_patch(patches.Rectangle((p['x'], p['y']), p['L'], p['rš'], facecolor=color_map[p['Prvek']], edgecolor='black', alpha=0.8))
-                font_size = 8 if p['L'] > 500 else 6
-                ax.text(p['x'] + p['L']/2, p['y'] + p['rš']/2, f"{p['Prvek']}\n({p['L']:.0f}x{p['rš']})", 
-                        ha='center', va='center', fontsize=font_size, color='white', weight='bold')
-            
-            ax.set_xlim(0, data['max_x'] * 1.02)
-            ax.set_ylim(0, data['w_coil'] * 1.05)
-            ax.set_xlabel("Délka odvinutého svitku (mm)")
-            ax.set_ylabel("Šířka svitku (mm)")
-            st.pyplot(fig)
+            for i, b in enumerate(bins):
+                odvinuto_mm = b['odvinuto_mm']
+                w_coil = b['w_coil']
+                
+                st.write(f"**Pás {i+1}:** Odstřihnout **{odvinuto_mm / 1000:.2f} m** (Šířka svitku: {w_coil} mm)")
+                
+                fig, ax = plt.subplots(figsize=(12, 2.5))
+                # Kreslení obrysu pásu
+                ax.add_patch(patches.Rectangle((0, 0), odvinuto_mm, w_coil, fill=False, edgecolor='black', linewidth=2))
+                
+                unikatni_prvky = list(set([p['Prvek'] for p in b['placed']]))
+                color_map = {prvek: barvy[idx % len(barvy)] for idx, prvek in enumerate(unikatni_prvky)}
+                
+                for p in b['placed']:
+                    ax.add_patch(patches.Rectangle((p['x'], p['y']), p['L'], p['rš'], facecolor=color_map[p['Prvek']], edgecolor='black', alpha=0.8))
+                    font_size = 8 if p['L'] > 500 else 6
+                    ax.text(p['x'] + p['L']/2, p['y'] + p['rš']/2, f"{p['Prvek']}\n({p['L']:.0f}x{p['rš']})", 
+                            ha='center', va='center', fontsize=font_size, color='white', weight='bold')
+                
+                ax.set_xlim(0, max(odvinuto_mm * 1.02, 100))
+                ax.set_ylim(0, w_coil * 1.05)
+                ax.set_xlabel("Délka (mm)")
+                ax.set_ylabel("Šířka (mm)")
+                st.pyplot(fig)
             st.divider()
     else:
         st.info("Nejdříve proveďte výpočet v záložce Kalkulátor.")
