@@ -20,22 +20,18 @@ class FreeRect:
         self.h = h
 
 def pack_guillotine(items, coil_w):
-    # Seřazení od nejdelších a nejširších
     items.sort(key=lambda x: (x['L'], x['rš']), reverse=True)
-    free_rects = [FreeRect(0, 0, 9999999, coil_w)] # Nekonečný svitek
+    free_rects = [FreeRect(0, 0, 9999999, coil_w)]
     placed = []
     
     for item in items:
         best_idx = -1
         best_fr = None
-        
-        # Nalezení nejlepšího volného místa
         for i, fr in enumerate(free_rects):
             if fr.w >= item['L'] and fr.h >= item['rš']:
                 if best_fr is None or fr.h < best_fr.h:
                     best_fr = fr
                     best_idx = i
-        
         if best_fr is None:
             continue
             
@@ -43,10 +39,8 @@ def pack_guillotine(items, coil_w):
         item['y'] = best_fr.y
         placed.append(item)
         
-        # Gilotinový řez - rozdělení zbytku prostoru
         w_left = best_fr.w - item['L']
         h_left = best_fr.h - item['rš']
-        
         fr_top = FreeRect(best_fr.x, best_fr.y + item['rš'], item['L'], h_left)
         fr_right = FreeRect(best_fr.x + item['L'], best_fr.y, w_left, best_fr.h)
         
@@ -54,29 +48,64 @@ def pack_guillotine(items, coil_w):
         if fr_top.w > 0 and fr_top.h > 0: free_rects.append(fr_top)
         if fr_right.w > 0 and fr_right.h > 0: free_rects.append(fr_right)
         
-        # Třídění volných míst zleva doprava
         free_rects.sort(key=lambda f: (f.x, f.y))
-        
     return placed
 
 # --- INICIALIZACE NASTAVENÍ ---
 if 'config' not in st.session_state:
     st.session_state.config = {"cena_ohyb": 10.0, "max_delka": 4000, "presah": 40}
 
+# --- NAČTENÍ KOMPLETNÍCH DAT Z VAŠEHO EXCELU ---
 if 'materialy_df' not in st.session_state:
     st.session_state.materialy_df = pd.DataFrame([
-        {"Materiál": "FeZn svitek 0,55 mm", "Šířka (mm)": 1250, "Cena/m2": 200, "Max délka tabule (mm)": 10000},
-        {"Materiál": "FeZn svitek lak PES 0,5 mm", "Šířka (mm)": 1250, "Cena/m2": 270, "Max délka tabule (mm)": 10000},
-        {"Materiál": "Comax FALC 0,7mm PES", "Šířka (mm)": 1250, "Cena/m2": 550, "Max délka tabule (mm)": 10000},
-        {"Materiál": "Titanzinek 0,6 mm", "Šířka (mm)": 1000, "Cena/m2": 650, "Max délka tabule (mm)": 2000}
+        {"Materiál": "FeZn svitek 0,55 mm", "Šířka (mm)": 1250, "Cena/m2": 200.0, "Max délka tabule (mm)": 10000},
+        {"Materiál": "FeZn svitek lak PES 0,5 mm std barvy", "Šířka (mm)": 2000, "Cena/m2": 270.0, "Max délka tabule (mm)": 10000},
+        {"Materiál": "FeZn svitek lak PES 0,5 mm nestandard", "Šířka (mm)": 1000, "Cena/m2": 288.0, "Max délka tabule (mm)": 10000},
+        {"Materiál": "Titanzinek 0,6 mm", "Šířka (mm)": 1500, "Cena/m2": 611.0, "Max délka tabule (mm)": 10000},
+        {"Materiál": "Titanzinek 0,7 mm", "Šířka (mm)": 1250, "Cena/m2": 714.0, "Max délka tabule (mm)": 10000},
+        {"Materiál": "Cu svitek 0,55 mm", "Šířka (mm)": 2000, "Cena/m2": 2119.0, "Max délka tabule (mm)": 10000},
+        {"Materiál": "Hliník 0,6 mm J+SF PES (MTC)", "Šířka (mm)": 1000, "Cena/m2": 400.0, "Max délka tabule (mm)": 10000},
+        {"Materiál": "Hliník 0,7 mm O+SF PES (MTC)", "Šířka (mm)": 1500, "Cena/m2": 530.0, "Max délka tabule (mm)": 10000},
+        {"Materiál": "Comax FALC 0,7mm PES", "Šířka (mm)": 1750, "Cena/m2": 550.0, "Max délka tabule (mm)": 10000},
+        {"Materiál": "Comax FALC 0,7mm Cortex", "Šířka (mm)": 2500, "Cena/m2": 590.0, "Max délka tabule (mm)": 10000},
+        {"Materiál": "Prefa CLR", "Šířka (mm)": 1300, "Cena/m2": 457.0, "Max délka tabule (mm)": 10000},
+        {"Materiál": "PREFA Prefalz", "Šířka (mm)": 1700, "Cena/m2": 580.0, "Max délka tabule (mm)": 10000},
+        {"Materiál": "PVC ROOFPLAN 7035", "Šířka (mm)": 1800, "Cena/m2": 591.0, "Max délka tabule (mm)": 10000},
+        {"Materiál": "Bauder PVC svitek 7035", "Šířka (mm)": 2600, "Cena/m2": 840.0, "Max délka tabule (mm)": 10000},
+        {"Materiál": "ATYP", "Šířka (mm)": 1250, "Cena/m2": 0.0, "Max délka tabule (mm)": 10000},
+        {"Materiál": "Výroba z materiálu zákazníka", "Šířka (mm)": 1250, "Cena/m2": 0.0, "Max délka tabule (mm)": 10000}
     ])
 
 if 'prvky_df' not in st.session_state:
     st.session_state.prvky_df = pd.DataFrame([
         {"Typ prvku": "závětrná lišta spodní r.š.250", "RŠ (mm)": 250, "Ohyby": 6},
-        {"Typ prvku": "okapnice pod fólii r.š.200", "RŠ (mm)": 200, "Ohyby": 2},
-        {"Typ prvku": "parapet r.š.330", "RŠ (mm)": 330, "Ohyby": 3},
-        {"Typ prvku": "úžlabí r.š.500", "RŠ (mm)": 500, "Ohyby": 4}
+        {"Typ prvku": "závětrná lišta spodní r.š.330", "RŠ (mm)": 333, "Ohyby": 6},
+        {"Typ prvku": "závětrná lišta spodní r.š.410", "RŠ (mm)": 410, "Ohyby": 6},
+        {"Typ prvku": "okapnice do r.š. 200", "RŠ (mm)": 200, "Ohyby": 2},
+        {"Typ prvku": "okapnice r.š.201-250", "RŠ (mm)": 250, "Ohyby": 2},
+        {"Typ prvku": "okapnice r.š. 250 - 333", "RŠ (mm)": 333, "Ohyby": 2},
+        {"Typ prvku": "lemování ke zdi r.š.250", "RŠ (mm)": 250, "Ohyby": 3},
+        {"Typ prvku": "lemování ke zdi r.š.330", "RŠ (mm)": 333, "Ohyby": 6},
+        {"Typ prvku": "úžlabí r.š.500", "RŠ (mm)": 500, "Ohyby": 3},
+        {"Typ prvku": "úžlabí rš 670", "RŠ (mm)": 670, "Ohyby": 3},
+        {"Typ prvku": "úžlabí s drážkou rš. 500", "RŠ (mm)": 500, "Ohyby": 5},
+        {"Typ prvku": "úžlabí s drážkou rš. 670", "RŠ (mm)": 670, "Ohyby": 5},
+        {"Typ prvku": "závětrná lišta pultová r.š.250", "RŠ (mm)": 250, "Ohyby": 6},
+        {"Typ prvku": "závětrná lišta pultová r.š.330", "RŠ (mm)": 333, "Ohyby": 6},
+        {"Typ prvku": "atikový plech do r.š. 500", "RŠ (mm)": 500, "Ohyby": 4},
+        {"Typ prvku": "L lišta", "RŠ (mm)": 100, "Ohyby": 2},
+        {"Typ prvku": "stěnová lišta", "RŠ (mm)": 100, "Ohyby": 2},
+        {"Typ prvku": "parapet do r.š. 250", "RŠ (mm)": 250, "Ohyby": 3},
+        {"Typ prvku": "parapet do r.š. 330", "RŠ (mm)": 333, "Ohyby": 3},
+        {"Typ prvku": "parapet do r.š. 500", "RŠ (mm)": 500, "Ohyby": 3},
+        {"Typ prvku": "parapet do r.š. 250 včetně boků", "RŠ (mm)": 250, "Ohyby": 3},
+        {"Typ prvku": "parapet do r.š. 330 včetně boků", "RŠ (mm)": 333, "Ohyby": 3},
+        {"Typ prvku": "parapet do r.š. 500 včetně boků", "RŠ (mm)": 500, "Ohyby": 3},
+        {"Typ prvku": "atypický výrobek rš 0 - 100", "RŠ (mm)": 100, "Ohyby": 9},
+        {"Typ prvku": "atypický výrobek rš 100 - 250", "RŠ (mm)": 250, "Ohyby": 9},
+        {"Typ prvku": "atypický výrobek rš 251 - 333", "RŠ (mm)": 333, "Ohyby": 9},
+        {"Typ prvku": "atypický výrobek rš 334 - 500", "RŠ (mm)": 500, "Ohyby": 9},
+        {"Typ prvku": "atypický výrobek rš 501 - 1250", "RŠ (mm)": 1250, "Ohyby": 9}
     ])
 
 if 'zakazka' not in st.session_state:
@@ -105,8 +134,8 @@ with tab_nastaveni:
 # ==========================================
 with tab_data:
     st.header("⚙️ Správa dat")
-    st.session_state.materialy_df = st.data_editor(st.session_state.materialy_df, num_rows="dynamic", key="em")
-    st.session_state.prvky_df = st.data_editor(st.session_state.prvky_df, num_rows="dynamic", key="ep")
+    st.session_state.materialy_df = st.data_editor(st.session_state.materialy_df, num_rows="dynamic", key="em", use_container_width=True)
+    st.session_state.prvky_df = st.data_editor(st.session_state.prvky_df, num_rows="dynamic", key="ep", use_container_width=True)
 
 # ==========================================
 # ZÁLOŽKA: KALKULÁTOR
@@ -139,7 +168,6 @@ with tab_kalk:
                 cena_prace = 0
                 conf = st.session_state.config
                 
-                # Příprava dílů pro jednotlivé materiály
                 for p in st.session_state.zakazka:
                     m_data = mat_dict[p["Materiál"]]
                     p_data = prv_dict[p["Prvek"]]
@@ -166,7 +194,6 @@ with tab_kalk:
                             "Prvek": p['Prvek'], "L": L_seg, "rš": p_data["RŠ (mm)"]
                         })
 
-                # Vlastní skládání pro každý materiál
                 vysledky_packing = {}
                 c_mat = 0
                 sumar = {}
@@ -182,15 +209,11 @@ with tab_kalk:
                         odvinuto_m = max_x / 1000
                         cena_za_svitek = odvinuto_m * (w_coil / 1000) * cena_m2
                         
-                        vysledky_packing[mat_name] = {
-                            "w_coil": w_coil, "max_x": max_x, "placed": placed
-                        }
-                        
+                        vysledky_packing[mat_name] = {"w_coil": w_coil, "max_x": max_x, "placed": placed}
                         c_mat += cena_za_svitek
                         sumar[mat_name] = {"Odvinout (m)": odvinuto_m, "Cena": cena_za_svitek}
                 
                 st.session_state.vysledky_packing = vysledky_packing
-                
                 st.subheader("Souhrnná tabulka")
                 st.dataframe(pd.DataFrame.from_dict(sumar, orient='index').style.format({"Odvinout (m)": "{:.2f}", "Cena": "{:.2f} Kč"}))
                 
@@ -204,7 +227,7 @@ with tab_kalk:
 # ==========================================
 with tab_nakres:
     st.header("📐 Schéma řezů na svitku")
-    st.write("Díky 2D Gilotinovému algoritmu aplikace minimalizuje prořez a zajistí, že všechny řezy půjdou provést na tabulových nůžkách.")
+    st.write("Díky 2D Gilotinovému algoritmu aplikace minimalizuje prořez.")
     
     if 'vysledky_packing' in st.session_state and st.session_state.vysledky_packing:
         barvy = ['#3498db', '#e74c3c', '#2ecc71', '#f1c40f', '#9b59b6', '#e67e22', '#1abc9c']
@@ -214,19 +237,13 @@ with tab_nakres:
             st.write(f"Celkem odvinout ze svitku: **{data['max_x'] / 1000:.2f} m**")
             
             fig, ax = plt.subplots(figsize=(12, 3))
-            
-            # Kreslení obrysu svitku
             ax.add_patch(patches.Rectangle((0, 0), data['max_x'], data['w_coil'], fill=False, edgecolor='black', linewidth=2))
             
-            # Přiřazení barev
             unikatni_prvky = list(set([p['Prvek'] for p in data['placed']]))
             color_map = {prvek: barvy[i % len(barvy)] for i, prvek in enumerate(unikatni_prvky)}
             
-            # Kreslení prvků
             for p in data['placed']:
                 ax.add_patch(patches.Rectangle((p['x'], p['y']), p['L'], p['rš'], facecolor=color_map[p['Prvek']], edgecolor='black', alpha=0.8))
-                
-                # Text uvnitř obdélníku
                 font_size = 8 if p['L'] > 500 else 6
                 ax.text(p['x'] + p['L']/2, p['y'] + p['rš']/2, f"{p['Prvek']}\n({p['L']:.0f}x{p['rš']})", 
                         ha='center', va='center', fontsize=font_size, color='white', weight='bold')
