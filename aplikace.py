@@ -264,7 +264,6 @@ with tab_kalk:
                 key="editor_zakazka"
             )
             
-            # Uložení provedených změn do paměti aplikace
             st.session_state.zakazka = edited_zakazka_df.to_dict('records')
             
             if st.button("🚀 SPOČÍTAT 2D", type="primary", use_container_width=True):
@@ -281,5 +280,112 @@ with tab_kalk:
                     seg = 1 if L_mm <= conf["max_delka"] else math.ceil((L_mm - conf["presah"]) / (conf["max_delka"] - conf["presah"]))
                     L_seg = (L_mm + (seg - 1) * conf["presah"]) / seg
                     
+                    # Rozděleno pro bezpečné zkopírování
                     if conf["povolit_rotaci"]:
-                        vejde_se = (p_data["RŠ (mm)"] <= m_data["Šířka (mm)"]) or (L_
+                        vejde_se = (p_data["RŠ (mm)"] <= m_data["Šířka (mm)"]) or \
+                                   (L_seg <= m_data["Šířka (mm)"] and p_data["RŠ (mm)"] <= m_data["Max délka tabule (mm)"])
+                    else:
+                        vejde_se = (p_data["RŠ (mm)"] <= m_data["Šířka (mm)"])
+                        
+                    if not vejde_se:
+                        st.error(f"CHYBA: Prvek '{p['Prvek']}' je moc široký na svitek {p['Materiál']}!")
+                        continue
+
+                    cena_prace += (p_data["Ohyby"] * conf["cena_ohyb"]) * seg * p["Kusů"]
+                    
+                    if p["Materiál"] not in fyzicke_kusy:
+                        fyzicke_kusy[p["Materiál"]] = []
+                        
+                    for _ in range(int(p["Kusů"] * seg)):
+                        fyzicke_kusy[p["Materiál"]].append({"Prvek": p['Prvek'], "L": L_seg, "rš": p_data["RŠ (mm)"]})
+
+                vysledky_packing = {}
+                c_mat = 0; sumar = {}
+                
+                for mat_name, items in fyzicke_kusy.items():
+                    w_coil = mat_dict[mat_name]["Šířka (mm)"]
+                    cena_m2 = mat_dict[mat_name]["Cena/m2"]
+                    max_tab_len = mat_dict[mat_name]["Max délka tabule (mm)"]
+                    
+                    bins = pack_guillotine_multibin(items, w_coil, max_tab_len, conf["povolit_rotaci"])
+                    
+                    if bins:
+                        tot_odvinuto = 0; tot_plocha = 0; tot_cena = 0
+                        vysledky_packing[mat_name] = bins
+                        
+                        for b in bins:
+                            max_x = max([p['x'] + p['draw_w'] for p in b['placed']])
+                            b['odvinuto_mm'] = max_x
+                            odvinuto_m = max_x / 1000
+                            plocha_m2 = odvinuto_m * (w_coil / 1000)
+                            cena_za_svitek = plocha_m2 * cena_m2
+                            
+                            tot_odvinuto += odvinuto_m
+                            tot_plocha += plocha_m2
+                            tot_cena += cena_za_svitek
+                            
+                        c_mat += tot_cena
+                        sumar[mat_name] = {
+                            "Pásů/Tabulí (ks)": len(bins), 
+                            "Celkem odvinout (m)": tot_odvinuto, 
+                            "Plocha (m2)": tot_plocha, 
+                            "Cena": tot_cena
+                        }
+                
+                st.session_state.vysledky_packing = vysledky_packing
+                st.subheader("Souhrnná tabulka materiálu")
+                st.dataframe(pd.DataFrame.from_dict(sumar, orient='index').style.format({
+                    "Celkem odvinout (m)": "{:.2f}", 
+                    "Plocha (m2)": "{:.2f}", 
+                    "Cena": "{:.2f} Kč"
+                }))
+                
+                r1, r2, r3 = st.columns(3)
+                r1.metric("Materiál", f"{c_mat:,.2f} Kč")
+                r2.metric("Práce (Ohyby)", f"{cena_prace:,.2f} Kč")
+                r3.metric("CELKEM ZAKÁZKA (vč. DPH)", f"{(c_mat + cena_prace)*1.21:,.2f} Kč")
+
+                buf = io.BytesIO()
+                with pd.ExcelWriter(buf, engine='openpyxl') as wr:
+                    edited_zakazka_df.to_excel(wr, sheet_name='Zadání', index=True)
+                    pd.DataFrame.from_dict(sumar, orient='index').to_excel(wr, sheet_name='Souhrn_Materiálu')
+                st.download_button("📥 Stáhnout Excel", buf.getvalue(), "kalkulace.xlsx", use_container_width=True)
+
+# ==========================================
+# ZÁLOŽKA: NÁKRES
+# ==========================================
+with tab_nakres:
+    st.header("📐 Schéma řezů na svitku")
+    if 'vysledky_packing' in st.session_state and st.session_state.vysledky_packing:
+        barvy = ['#3498db', '#e74c3c', '#2ecc71', '#f1c40f', '#9b59b6', '#e67e22', '#1abc9c', '#34495e', '#16a085', '#27ae60', '#8e44ad', '#f39c12', '#d35400', '#c0392b']
+        
+        for mat_name, bins in st.session_state.vysledky_packing.items():
+            st.subheader(f"Materiál: {mat_name}")
+            
+            for i, b in enumerate(bins):
+                odvinuto_mm = b['odvinuto_mm']
+                w_coil = b['w_coil']
+                
+                st.write(f"**Pás {i+1}:** Odstřihnout **{odvinuto_mm / 1000:.2f} m** (Šířka svitku: {w_coil} mm, Účtovaná plocha: **{(odvinuto_mm/1000)*(w_coil/1000):.2f} m2**)")
+                
+                fig, ax = plt.subplots(figsize=(12, 2.5))
+                ax.add_patch(patches.Rectangle((0, 0), odvinuto_mm, w_coil, fill=False, edgecolor='black', linewidth=2))
+                
+                unikatni_prvky = list(set([p['Prvek'] for p in b['placed']]))
+                color_map = {prvek: barvy[idx % len(barvy)] for idx, prvek in enumerate(unikatni_prvky)}
+                
+                for p in b['placed']:
+                    ax.add_patch(patches.Rectangle((p['x'], p['y']), p['draw_w'], p['draw_h'], facecolor=color_map[p['Prvek']], edgecolor='black', alpha=0.8))
+                    font_size = 8 if p['draw_w'] > 500 else 6
+                    rotace_text = " ↻" if p.get('rotated') else ""
+                    ax.text(p['x'] + p['draw_w']/2, p['y'] + p['draw_h']/2, f"{p['Prvek']}\n({p['L']:.0f}x{p['rš']}){rotace_text}", 
+                            ha='center', va='center', fontsize=font_size, color='white', weight='bold')
+                
+                ax.set_xlim(0, max(odvinuto_mm * 1.02, 100))
+                ax.set_ylim(0, w_coil * 1.05)
+                ax.set_xlabel("Délka odvinutého plechu (mm)")
+                ax.set_ylabel("Šířka svitku (mm)")
+                st.pyplot(fig)
+            st.divider()
+    else:
+        st.info("Nejdříve proveďte výpočet v záložce Kalkulátor.")
