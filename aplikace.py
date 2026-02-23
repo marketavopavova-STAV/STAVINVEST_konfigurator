@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import math
 import io
-import matplotlib.subplots as plt_subplots
+import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 
 # --- NASTAVENÍ STRÁNKY ---
@@ -20,6 +20,7 @@ class FreeRect:
         self.h = h
 
 def pack_guillotine_multibin(items, coil_w, max_l, allow_rotation=True):
+    # Díly řadíme od největší plochy a nejdelší strany
     items.sort(key=lambda x: (x['L'] * x['rš'], max(x['L'], x['rš'])), reverse=True)
     bins = []
     
@@ -27,29 +28,36 @@ def pack_guillotine_multibin(items, coil_w, max_l, allow_rotation=True):
         placed = False
         for b in bins:
             best_idx = -1
+            # Prioritou je nyní minimální prodloužení svitku (new_max_x)
             best_score = (float('inf'), float('inf'), float('inf'), float('inf'))
             best_rotated = False
             
+            # Jaká je aktuální délka odvinutého svitku v tomto pásu
             current_max_x = max([0] + [p['x'] + p['draw_w'] for p in b['placed']])
             
             for i, fr in enumerate(b['free_rects']):
-                # Bez rotace
+                # 1. Zkouška BEZ rotace
                 if fr.w >= item['L'] and fr.h >= item['rš']:
                     w, h = item['L'], item['rš']
                     new_max_x = max(current_max_x, fr.x + w)
                     fit_score = min(fr.w - w, fr.h - h)
+                    # Skóre: (Minimální délka odvinutí, co nejvíce vlevo, co nejvíce dole, přesný spoj)
                     score = (new_max_x, fr.x, fr.y, fit_score)
                     if score < best_score:
-                        best_score = score; best_idx = i; best_rotated = False
+                        best_score = score
+                        best_idx = i
+                        best_rotated = False
                 
-                # S rotací
+                # 2. Zkouška S rotací o 90°
                 if allow_rotation and fr.w >= item['rš'] and fr.h >= item['L']:
                     w, h = item['rš'], item['L']
                     new_max_x = max(current_max_x, fr.x + w)
                     fit_score = min(fr.w - w, fr.h - h)
                     score = (new_max_x, fr.x, fr.y, fit_score)
                     if score < best_score:
-                        best_score = score; best_idx = i; best_rotated = True
+                        best_score = score
+                        best_idx = i
+                        best_rotated = True
             
             if best_idx != -1:
                 best_fr = b['free_rects'][best_idx]
@@ -57,15 +65,22 @@ def pack_guillotine_multibin(items, coil_w, max_l, allow_rotation=True):
                 w = item['rš'] if best_rotated else item['L']
                 h = item['L'] if best_rotated else item['rš']
                 
-                item['x'] = best_fr.x; item['y'] = best_fr.y
-                item['draw_w'] = w; item['draw_h'] = h
+                item['x'] = best_fr.x
+                item['y'] = best_fr.y
+                item['draw_w'] = w
+                item['draw_h'] = h
                 b['placed'].append(item)
                 
-                w_left = best_fr.w - w; h_left = best_fr.h - h
-                area_top1 = w * h_left; area_right1 = w_left * best_fr.h
+                w_left = best_fr.w - w
+                h_left = best_fr.h - h
+                
+                # Gilotinový řez - zachování největší plochy
+                area_top1 = w * h_left
+                area_right1 = w_left * best_fr.h
                 max_area1 = max(area_top1, area_right1)
                 
-                area_top2 = best_fr.w * h_left; area_right2 = w_left * h
+                area_top2 = best_fr.w * h_left
+                area_right2 = w_left * h
                 max_area2 = max(area_top2, area_right2)
                 
                 if max_area1 >= max_area2:
@@ -82,9 +97,12 @@ def pack_guillotine_multibin(items, coil_w, max_l, allow_rotation=True):
                 break
                 
         if not placed:
+            # Zakládáme nový pás/tabuli
             will_rotate = False
             if allow_rotation and coil_w >= item['L'] and item['rš'] <= max_l:
-                if item['rš'] < item['L']: will_rotate = True
+                # Otočíme ho, pokud to ušetří délku odvinutí
+                if item['rš'] < item['L']: 
+                    will_rotate = True
                     
             w = item['rš'] if will_rotate else item['L']
             h = item['L'] if will_rotate else item['rš']
@@ -96,11 +114,15 @@ def pack_guillotine_multibin(items, coil_w, max_l, allow_rotation=True):
             item['draw_w'] = w; item['draw_h'] = h
             new_bin['placed'].append(item)
             
-            w_left = actual_max_l - w; h_left = coil_w - h
-            area_top1 = w * h_left; area_right1 = w_left * coil_w
+            w_left = actual_max_l - w
+            h_left = coil_w - h
+            
+            area_top1 = w * h_left
+            area_right1 = w_left * coil_w
             max_area1 = max(area_top1, area_right1)
             
-            area_top2 = actual_max_l * h_left; area_right2 = w_left * h
+            area_top2 = actual_max_l * h_left
+            area_right2 = w_left * h
             max_area2 = max(area_top2, area_right2)
             
             if max_area1 >= max_area2:
@@ -330,7 +352,7 @@ with tab_nakres:
                 
                 st.write(f"**Pás {i+1}:** Odstřihnout **{odvinuto_mm / 1000:.2f} m** (Šířka svitku: {w_coil} mm, Účtovaná plocha: **{(odvinuto_mm/1000)*(w_coil/1000):.2f} m2**)")
                 
-                fig, ax = plt_subplots.subplots(figsize=(12, 2.5))
+                fig, ax = plt.subplots(figsize=(12, 2.5))
                 ax.add_patch(patches.Rectangle((0, 0), odvinuto_mm, w_coil, fill=False, edgecolor='black', linewidth=2))
                 
                 unikatni_prvky = list(set([p['Prvek'] for p in b['placed']]))
