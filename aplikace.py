@@ -7,10 +7,10 @@ import matplotlib.patches as patches
 
 # --- NASTAVENÍ STRÁNKY ---
 st.set_page_config(page_title="Stavinvest Konfigurátor", page_icon="✂️", layout="wide")
-st.title("✂️ Stavinvest Konfigurátor vč. 2D Nákresu")
+st.title("✂️ Stavinvest Konfigurátor vč. Chytrého 2D Tetrisu")
 
 # ==========================================
-# 2D GUILLOTINE BIN PACKING (Více svitků/tabulí)
+# CHYTRÝ 2D TETRIS ALGORITMUS (BSSF + Max Area Split)
 # ==========================================
 class FreeRect:
     def __init__(self, x, y, w, h):
@@ -20,57 +20,90 @@ class FreeRect:
         self.h = h
 
 def pack_guillotine_multibin(items, coil_w, max_l):
-    # Seřazení kusů
+    # Třídění od nejdelšího a nejširšího
     items.sort(key=lambda x: (x['L'], x['rš']), reverse=True)
     bins = []
     
     for item in items:
         placed = False
-        # Pokus o umístění do už existujících rozdělaných svitků
         for b in bins:
             best_idx = -1
-            best_fr = None
+            best_score = float('inf')
+            best_area = float('inf')
+            
+            # Hledání nejlepšího volného obdélníku (Best Short Side Fit)
             for i, fr in enumerate(b['free_rects']):
                 if fr.w >= item['L'] and fr.h >= item['rš']:
-                    if best_fr is None or fr.h < best_fr.h:
-                        best_fr = fr
+                    score = min(fr.w - item['L'], fr.h - item['rš'])
+                    area = fr.w * fr.h
+                    # Vybírá místo, kde vznikne nejmenší odpadní "nudle"
+                    if score < best_score or (score == best_score and area < best_area):
+                        best_score = score
+                        best_area = area
                         best_idx = i
             
-            if best_fr is not None:
+            if best_idx != -1:
+                best_fr = b['free_rects'][best_idx]
                 item['x'] = best_fr.x
                 item['y'] = best_fr.y
                 b['placed'].append(item)
                 
                 w_left = best_fr.w - item['L']
                 h_left = best_fr.h - item['rš']
-                fr_top = FreeRect(best_fr.x, best_fr.y + item['rš'], item['L'], h_left)
-                fr_right = FreeRect(best_fr.x + item['L'], best_fr.y, w_left, best_fr.h)
                 
+                # CHYTRÉ ROZDĚLENÍ ZBYTKU (Max Area Heuristic)
+                # Algoritmus zkouší, zda je lepší zbytek říznout na výšku nebo na šířku,
+                # aby zachoval co největší nepřerušenou plochu pro další kusy.
+                area1_split1 = item['L'] * h_left
+                area2_split1 = w_left * best_fr.h
+                max_area_split1 = max(area1_split1, area2_split1)
+                
+                area1_split2 = best_fr.w * h_left
+                area2_split2 = w_left * item['rš']
+                max_area_split2 = max(area1_split2, area2_split2)
+                
+                if max_area_split1 > max_area_split2:
+                    fr_top = FreeRect(best_fr.x, best_fr.y + item['rš'], item['L'], h_left)
+                    fr_right = FreeRect(best_fr.x + item['L'], best_fr.y, w_left, best_fr.h)
+                else:
+                    fr_top = FreeRect(best_fr.x, best_fr.y + item['rš'], best_fr.w, h_left)
+                    fr_right = FreeRect(best_fr.x + item['L'], best_fr.y, w_left, item['rš'])
+                    
                 b['free_rects'].pop(best_idx)
                 if fr_top.w > 0 and fr_top.h > 0: b['free_rects'].append(fr_top)
                 if fr_right.w > 0 and fr_right.h > 0: b['free_rects'].append(fr_right)
                 
-                b['free_rects'].sort(key=lambda f: (f.x, f.y))
                 placed = True
                 break
                 
-        # Pokud se kus už nevejde, založíme nový svitek (Bin)
         if not placed:
-            actual_max_l = max(max_l, item['L']) # Pro jistotu, kdyby někdo zadal prvek delší než max limit
-            new_bin = {'free_rects': [FreeRect(0, 0, actual_max_l, coil_w)], 'placed': [], 'w_coil': coil_w}
+            actual_max_l = max(max_l, item['L'])
+            new_bin = {'free_rects': [], 'placed': [], 'w_coil': coil_w, 'max_l': actual_max_l}
             item['x'] = 0
             item['y'] = 0
             new_bin['placed'].append(item)
             
             w_left = actual_max_l - item['L']
             h_left = coil_w - item['rš']
-            fr_top = FreeRect(0, item['rš'], item['L'], h_left)
-            fr_right = FreeRect(item['L'], 0, w_left, coil_w)
             
+            area1_split1 = item['L'] * h_left
+            area2_split1 = w_left * coil_w
+            max_area_split1 = max(area1_split1, area2_split1)
+            
+            area1_split2 = actual_max_l * h_left
+            area2_split2 = w_left * item['rš']
+            max_area_split2 = max(area1_split2, area2_split2)
+            
+            if max_area_split1 > max_area_split2:
+                fr_top = FreeRect(0, item['rš'], item['L'], h_left)
+                fr_right = FreeRect(item['L'], 0, w_left, coil_w)
+            else:
+                fr_top = FreeRect(0, item['rš'], actual_max_l, h_left)
+                fr_right = FreeRect(item['L'], 0, w_left, item['rš'])
+                
             if fr_top.w > 0 and fr_top.h > 0: new_bin['free_rects'].append(fr_top)
             if fr_right.w > 0 and fr_right.h > 0: new_bin['free_rects'].append(fr_right)
             
-            new_bin['free_rects'].sort(key=lambda f: (f.x, f.y))
             bins.append(new_bin)
             
     return bins
@@ -158,7 +191,6 @@ with tab_nastaveni:
 # ==========================================
 with tab_data:
     st.header("⚙️ Správa dat")
-    st.info("Zde můžete přidávat materiály, upravovat jejich ceny i limitní délku (Max délka tabule).")
     st.session_state.materialy_df = st.data_editor(st.session_state.materialy_df, num_rows="dynamic", key="em", use_container_width=True)
     st.session_state.prvky_df = st.data_editor(st.session_state.prvky_df, num_rows="dynamic", key="ep", use_container_width=True)
 
@@ -261,7 +293,7 @@ with tab_kalk:
 # ==========================================
 with tab_nakres:
     st.header("📐 Schéma řezů na svitku")
-    st.write("Aplikace nyní hlídá **Maximální délku tabule** a pokud je překročena, automaticky založí nový svitek.")
+    st.write("Aplikace využívá Max-Area Heuristiku – skládá menší kusy k sobě tak, aby zanechala co největší nepřerušený zbytek pro další dlouhé kusy.")
     
     if 'vysledky_packing' in st.session_state and st.session_state.vysledky_packing:
         barvy = ['#3498db', '#e74c3c', '#2ecc71', '#f1c40f', '#9b59b6', '#e67e22', '#1abc9c']
@@ -276,7 +308,6 @@ with tab_nakres:
                 st.write(f"**Pás {i+1}:** Odstřihnout **{odvinuto_mm / 1000:.2f} m** (Šířka svitku: {w_coil} mm)")
                 
                 fig, ax = plt.subplots(figsize=(12, 2.5))
-                # Kreslení obrysu pásu
                 ax.add_patch(patches.Rectangle((0, 0), odvinuto_mm, w_coil, fill=False, edgecolor='black', linewidth=2))
                 
                 unikatni_prvky = list(set([p['Prvek'] for p in b['placed']]))
