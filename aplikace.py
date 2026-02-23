@@ -52,8 +52,6 @@ def pack_guillotine_multibin(items, coil_w, max_l):
                 h_left = best_fr.h - item['rš']
                 
                 # CHYTRÉ ROZDĚLENÍ ZBYTKU (Max Area Heuristic)
-                # Algoritmus zkouší, zda je lepší zbytek říznout na výšku nebo na šířku,
-                # aby zachoval co největší nepřerušenou plochu pro další kusy.
                 area1_split1 = item['L'] * h_left
                 area2_split1 = w_left * best_fr.h
                 max_area_split1 = max(area1_split1, area2_split1)
@@ -217,7 +215,10 @@ with tab_kalk:
     with col_res:
         st.header("Výpočet a Optimalizace")
         if st.session_state.zakazka:
-            st.table(pd.DataFrame(st.session_state.zakazka))
+            # Oprava číslování tabulky zakázky
+            df_zakazka = pd.DataFrame(st.session_state.zakazka)
+            df_zakazka.index = df_zakazka.index + 1
+            st.table(df_zakazka)
             
             if st.button("🚀 SPOČÍTAT 2D", type="primary", use_container_width=True):
                 st.divider()
