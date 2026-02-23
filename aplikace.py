@@ -7,10 +7,10 @@ import matplotlib.patches as patches
 
 # --- NASTAVENÍ STRÁNKY ---
 st.set_page_config(page_title="Stavinvest Konfigurátor", page_icon="✂️", layout="wide")
-st.title("✂️ Stavinvest Konfigurátor vč. Chytrého 2D Tetrisu")
+st.title("✂️ Stavinvest Konfigurátor vč. Globálního 2D Tetrisu")
 
 # ==========================================
-# CHYTRÝ 2D TETRIS (MINIMALIZACE DÉLKY ODVINU + ROTACE)
+# CHYTRÝ 2D TETRIS (GLOBÁLNÍ MINIMALIZACE ODVINU + ROTACE)
 # ==========================================
 class FreeRect:
     def __init__(self, x, y, w, h):
@@ -25,14 +25,14 @@ def pack_guillotine_multibin(items, coil_w, max_l, allow_rotation=True):
     bins = []
     
     for item in items:
-        placed = False
-        for b in bins:
-            best_idx = -1
-            # Prioritou je nyní minimální prodloužení svitku (new_max_x)
-            best_score = (float('inf'), float('inf'), float('inf'), float('inf'))
-            best_rotated = False
-            
-            # Jaká je aktuální délka odvinutého svitku v tomto pásu
+        best_bin_idx = -1
+        best_fr_idx = -1
+        # Prioritou je GLOBÁLNÍ minimalizace prodloužení jakéhokoliv svitku (delta_x)
+        best_score = (float('inf'), float('inf'), float('inf'), float('inf'))
+        best_rotated = False
+        
+        # Prohledáváme VŠECHNY dostupné svitky/tabule
+        for b_idx, b in enumerate(bins):
             current_max_x = max([0] + [p['x'] + p['draw_w'] for p in b['placed']])
             
             for i, fr in enumerate(b['free_rects']):
@@ -40,67 +40,73 @@ def pack_guillotine_multibin(items, coil_w, max_l, allow_rotation=True):
                 if fr.w >= item['L'] and fr.h >= item['rš']:
                     w, h = item['L'], item['rš']
                     new_max_x = max(current_max_x, fr.x + w)
+                    delta_x = new_max_x - current_max_x # O kolik mm to prodlouží tento svitek?
                     fit_score = min(fr.w - w, fr.h - h)
-                    # Skóre: (Minimální délka odvinutí, co nejvíce vlevo, co nejvíce dole, přesný spoj)
-                    score = (new_max_x, fr.x, fr.y, fit_score)
+                    
+                    # Skóre: (Minimální prodloužení svitku, co nejvíce vlevo, co nejvíce dole, přesný spoj)
+                    score = (delta_x, new_max_x, fr.y, fit_score)
                     if score < best_score:
                         best_score = score
-                        best_idx = i
+                        best_bin_idx = b_idx
+                        best_fr_idx = i
                         best_rotated = False
                 
                 # 2. Zkouška S rotací o 90°
                 if allow_rotation and fr.w >= item['rš'] and fr.h >= item['L']:
                     w, h = item['rš'], item['L']
                     new_max_x = max(current_max_x, fr.x + w)
+                    delta_x = new_max_x - current_max_x
                     fit_score = min(fr.w - w, fr.h - h)
-                    score = (new_max_x, fr.x, fr.y, fit_score)
+                    
+                    score = (delta_x, new_max_x, fr.y, fit_score)
                     if score < best_score:
                         best_score = score
-                        best_idx = i
+                        best_bin_idx = b_idx
+                        best_fr_idx = i
                         best_rotated = True
+        
+        # Pokud se našlo místo v existujícím svitku
+        if best_bin_idx != -1:
+            b = bins[best_bin_idx]
+            best_fr = b['free_rects'][best_fr_idx]
             
-            if best_idx != -1:
-                best_fr = b['free_rects'][best_idx]
-                item['rotated'] = best_rotated
-                w = item['rš'] if best_rotated else item['L']
-                h = item['L'] if best_rotated else item['rš']
+            w = item['rš'] if best_rotated else item['L']
+            h = item['L'] if best_rotated else item['rš']
+            
+            item['rotated'] = best_rotated
+            item['x'] = best_fr.x
+            item['y'] = best_fr.y
+            item['draw_w'] = w
+            item['draw_h'] = h
+            b['placed'].append(item)
+            
+            w_left = best_fr.w - w
+            h_left = best_fr.h - h
+            
+            # Gilotinový řez - zachování největší plochy (Max Area Split)
+            area_top1 = w * h_left
+            area_right1 = w_left * best_fr.h
+            max_area1 = max(area_top1, area_right1)
+            
+            area_top2 = best_fr.w * h_left
+            area_right2 = w_left * h
+            max_area2 = max(area_top2, area_right2)
+            
+            if max_area1 >= max_area2:
+                fr_top = FreeRect(best_fr.x, best_fr.y + h, w, h_left)
+                fr_right = FreeRect(best_fr.x + w, best_fr.y, w_left, best_fr.h)
+            else:
+                fr_top = FreeRect(best_fr.x, best_fr.y + h, best_fr.w, h_left)
+                fr_right = FreeRect(best_fr.x + w, best_fr.y, w_left, h)
                 
-                item['x'] = best_fr.x
-                item['y'] = best_fr.y
-                item['draw_w'] = w
-                item['draw_h'] = h
-                b['placed'].append(item)
-                
-                w_left = best_fr.w - w
-                h_left = best_fr.h - h
-                
-                # Gilotinový řez - zachování největší plochy
-                area_top1 = w * h_left
-                area_right1 = w_left * best_fr.h
-                max_area1 = max(area_top1, area_right1)
-                
-                area_top2 = best_fr.w * h_left
-                area_right2 = w_left * h
-                max_area2 = max(area_top2, area_right2)
-                
-                if max_area1 >= max_area2:
-                    fr_top = FreeRect(best_fr.x, best_fr.y + h, w, h_left)
-                    fr_right = FreeRect(best_fr.x + w, best_fr.y, w_left, best_fr.h)
-                else:
-                    fr_top = FreeRect(best_fr.x, best_fr.y + h, best_fr.w, h_left)
-                    fr_right = FreeRect(best_fr.x + w, best_fr.y, w_left, h)
-                    
-                b['free_rects'].pop(best_idx)
-                if fr_top.w > 0 and fr_top.h > 0: b['free_rects'].append(fr_top)
-                if fr_right.w > 0 and fr_right.h > 0: b['free_rects'].append(fr_right)
-                placed = True
-                break
-                
-        if not placed:
-            # Zakládáme nový pás/tabuli
+            b['free_rects'].pop(best_fr_idx)
+            if fr_top.w > 0 and fr_top.h > 0: b['free_rects'].append(fr_top)
+            if fr_right.w > 0 and fr_right.h > 0: b['free_rects'].append(fr_right)
+            
+        else:
+            # Nevešlo se nikam = zakládáme nový pás/tabuli
             will_rotate = False
             if allow_rotation and coil_w >= item['L'] and item['rš'] <= max_l:
-                # Otočíme ho, pokud to ušetří délku odvinutí
                 if item['rš'] < item['L']: 
                     will_rotate = True
                     
