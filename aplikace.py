@@ -20,7 +20,6 @@ class FreeRect:
         self.h = h
 
 def pack_guillotine_multibin(items, coil_w, max_l, allow_rotation=True):
-    # Třídění od největší plochy
     items.sort(key=lambda x: x['L'] * x['rš'], reverse=True)
     bins = []
     
@@ -33,14 +32,12 @@ def pack_guillotine_multibin(items, coil_w, max_l, allow_rotation=True):
             best_rotated = False
             
             for i, fr in enumerate(b['free_rects']):
-                # 1. Zkouška bez rotace
                 if fr.w >= item['L'] and fr.h >= item['rš']:
                     score = min(fr.w - item['L'], fr.h - item['rš'])
                     area = fr.w * fr.h
                     if score < best_score or (score == best_score and area < best_area):
                         best_score = score; best_area = area; best_idx = i; best_rotated = False
                 
-                # 2. Zkouška s rotací o 90°
                 if allow_rotation and fr.w >= item['rš'] and fr.h >= item['L']:
                     score = min(fr.w - item['rš'], fr.h - item['L'])
                     area = fr.w * fr.h
@@ -62,7 +59,6 @@ def pack_guillotine_multibin(items, coil_w, max_l, allow_rotation=True):
                 w_left = best_fr.w - w
                 h_left = best_fr.h - h
                 
-                # Max Area Split
                 area1_split1 = w * h_left
                 area2_split1 = w_left * best_fr.h
                 max_area_split1 = max(area1_split1, area2_split1)
@@ -85,7 +81,6 @@ def pack_guillotine_multibin(items, coil_w, max_l, allow_rotation=True):
                 break
                 
         if not placed:
-            # Určení rotace pro nový svitek
             will_rotate = False
             if allow_rotation and coil_w >= item['L'] and item['rš'] <= max_l:
                 if item['rš'] < item['L']: 
@@ -200,7 +195,7 @@ with tab_nastaveni:
         st.session_state.config["presah"] = st.number_input("Přesah spojů (mm)", value=int(st.session_state.config["presah"]))
     with c2:
         st.session_state.config["max_delka"] = st.number_input("Délka ohýbačky (mm)", value=int(st.session_state.config["max_delka"]))
-        st.session_state.config["povolit_rotaci"] = st.checkbox("🔄 Povolit otáčení dílů o 90° (Výrazná úspora délky svitku)", value=st.session_state.config["povolit_rotaci"])
+        st.session_state.config["povolit_rotaci"] = st.checkbox("🔄 Povolit otáčení dílů o 90°", value=st.session_state.config["povolit_rotaci"])
 
 # ==========================================
 # ZÁLOŽKA: DATA
@@ -251,7 +246,6 @@ with tab_kalk:
                     seg = 1 if L_mm <= conf["max_delka"] else math.ceil((L_mm - conf["presah"]) / (conf["max_delka"] - conf["presah"]))
                     L_seg = (L_mm + (seg - 1) * conf["presah"]) / seg
                     
-                    # Kontrola, zda se vejde (s ohledem na možnost rotace)
                     if conf["povolit_rotaci"]:
                         vejde_se = (p_data["RŠ (mm)"] <= m_data["Šířka (mm)"]) or (L_seg <= m_data["Šířka (mm)"] and p_data["RŠ (mm)"] <= m_data["Max délka tabule (mm)"])
                     else:
@@ -304,7 +298,6 @@ with tab_kalk:
                 r2.metric("Práce (Ohyby)", f"{cena_prace:,.2f} Kč")
                 r3.metric("CELKEM ZAKÁZKA (vč. DPH)", f"{(c_mat + cena_prace)*1.21:,.2f} Kč")
 
-                # EXPORT DO EXCELU
                 buf = io.BytesIO()
                 with pd.ExcelWriter(buf, engine='openpyxl') as wr:
                     df_zakazka.to_excel(wr, sheet_name='Zadání', index=True)
