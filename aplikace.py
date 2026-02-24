@@ -8,11 +8,10 @@ import matplotlib.patches as patches
 
 # --- NASTAVENÍ STRÁNKY ---
 st.set_page_config(page_title="Stavinvest Konfigurátor", page_icon="✂️", layout="wide")
-st.title("✂️ Stavinvest Konfigurátor vč. Multi-Heuristického Tetrisu")
+st.title("✂️ Stavinvest Konfigurátor vč. Extrémního 2D Tetrisu")
 
 # ==========================================
-# ČISTOKREVNÝ MAXRECTS TETRIS (MULTI-SORT)
-# Zkouší 4 různé strategie a vybírá tu s nejkratším prořezem
+# EXTRÉMNÍ 2D TETRIS (MULTI-HEURISTIKA + BOTTOM-LEFT)
 # ==========================================
 class FreeRect:
     def __init__(self, x, y, w, h):
@@ -29,36 +28,51 @@ class FreeRect:
         return not (self.x >= o.x + o.w or self.x + self.w <= o.x or 
                     self.y >= o.y + o.h or self.y + self.h <= o.y)
 
-def pack_maxrects_single(items, coil_w, max_l, allow_rotation):
+def pack_maxrects_single(items, coil_w, max_l, allow_rotation, heuristic_type):
     bins = []
+    
     for item in items:
         best_bin_idx = -1
         best_node = None
         best_rotated = False
-        
-        # Hodnotíme: Minimální prodloužení svitku (x), pak co nejvíce vlevo a dole
-        best_score1, best_score2, best_score3 = float('inf'), float('inf'), float('inf')
+        best_score = (float('inf'), float('inf'), float('inf'))
         
         for b_idx, b in enumerate(bins):
-            current_max_x = max([0] + [p['x'] + p['draw_w'] for p in b['placed']])
-            for fr in b['free_rects']:
-                # Bez rotace
+            for i, fr in enumerate(b['free_rects']):
+                
+                # 1. Zkouška BEZ rotace
                 if fr.w >= item['L'] and fr.h >= item['rš']:
                     w, h = item['L'], item['rš']
-                    new_max_x = max(current_max_x, fr.x + w)
-                    if (new_max_x < best_score1) or (new_max_x == best_score1 and fr.x < best_score2) or (new_max_x == best_score1 and fr.x == best_score2 and fr.y < best_score3):
-                        best_score1, best_score2, best_score3 = new_max_x, fr.x, fr.y
+                    # BL (Bottom-Left) = tahač doleva a dolů
+                    if heuristic_type == 'BL':
+                        score = (fr.x, fr.y, 0)
+                    # LB (Left-Bottom) = tahač dolů a doleva
+                    elif heuristic_type == 'LB':
+                        score = (fr.y, fr.x, 0)
+                    # BSSF = tahač doleva, pak co nejtěsnější mezera
+                    else:
+                        score = (fr.x, min(fr.w - w, fr.h - h), fr.y)
+                        
+                    if score < best_score:
+                        best_score = score
                         best_bin_idx, best_rotated, best_node = b_idx, False, fr
                         
-                # S rotací
+                # 2. Zkouška S rotací o 90°
                 if allow_rotation and fr.w >= item['rš'] and fr.h >= item['L']:
                     w, h = item['rš'], item['L']
-                    new_max_x = max(current_max_x, fr.x + w)
-                    if (new_max_x < best_score1) or (new_max_x == best_score1 and fr.x < best_score2) or (new_max_x == best_score1 and fr.x == best_score2 and fr.y < best_score3):
-                        best_score1, best_score2, best_score3 = new_max_x, fr.x, fr.y
+                    if heuristic_type == 'BL':
+                        score = (fr.x, fr.y, 0)
+                    elif heuristic_type == 'LB':
+                        score = (fr.y, fr.x, 0)
+                    else:
+                        score = (fr.x, min(fr.w - w, fr.h - h), fr.y)
+                        
+                    if score < best_score:
+                        best_score = score
                         best_bin_idx, best_rotated, best_node = b_idx, True, fr
                         
         if best_bin_idx == -1:
+            # Nikam se nevejde -> založit nový pás
             will_rotate = False
             if allow_rotation and coil_w >= item['L'] and item['rš'] <= max_l:
                 if item['rš'] < item['L']: will_rotate = True
@@ -83,6 +97,7 @@ def pack_maxrects_single(items, coil_w, max_l, allow_rotation):
         target_bin['placed'].append(item)
         placed_rect = FreeRect(item['x'], item['y'], w, h)
         
+        # MaxRects - dělení volného prostoru
         new_free_rects = []
         for fr in target_bin['free_rects']:
             if fr.intersects(placed_rect):
@@ -97,6 +112,7 @@ def pack_maxrects_single(items, coil_w, max_l, allow_rotation):
             else:
                 new_free_rects.append(fr)
                 
+        # Odstranění zbytečných obdélníků
         filtered_free_rects = []
         for i, fr1 in enumerate(new_free_rects):
             contained = False
@@ -115,29 +131,33 @@ def pack_maxrects_single(items, coil_w, max_l, allow_rotation):
     return bins
 
 def pack_optimal_multibin(items, coil_w, max_l, allow_rotation=True):
-    # Definice 4 různých logik pro skládání (plocha, délka, šířka atd.)
+    # Definice různých způsobů řazení (čím větší díl, tím dřív se ho snaží umístit)
     sort_keys = [
         lambda x: (x['L'] * x['rš'], max(x['L'], x['rš'])),
-        lambda x: (max(x['L'], x['rš']), x['L'] * x['rš']),
+        lambda x: (max(x['L'], x['rš']), min(x['L'], x['rš'])),
         lambda x: (x['L'], x['rš']),
         lambda x: (x['rš'], x['L'])
     ]
     
+    # 3 typy logiky vtlačování do děr (Doleva, Dolů, Na doraz)
+    heuristics = ['BL', 'LB', 'BSSF']
+    
     best_bins = None
     best_len = float('inf')
     
-    # Počítač vyzkouší všechny 4 způsoby a vybere ten nejúspornější
+    # Aplikace zkouší 12 různých postupů
     for key in sort_keys:
-        test_items = copy.deepcopy(items)
-        test_items.sort(key=key, reverse=True)
-        bins = pack_maxrects_single(test_items, coil_w, max_l, allow_rotation)
-        
-        total_len = sum(max([0] + [p['x'] + p['draw_w'] for p in b['placed']]) for b in bins)
+        for heur in heuristics:
+            test_items = copy.deepcopy(items)
+            test_items.sort(key=key, reverse=True)
+            bins = pack_maxrects_single(test_items, coil_w, max_l, allow_rotation, heur)
             
-        if total_len < best_len:
-            best_len = total_len
-            best_bins = bins
-            
+            total_len = sum(max([0] + [p['x'] + p['draw_w'] for p in b['placed']]) for b in bins)
+                
+            if total_len < best_len:
+                best_len = total_len
+                best_bins = bins
+                
     return best_bins
 
 # --- INICIALIZACE NASTAVENÍ ---
@@ -226,7 +246,6 @@ with tab_nastaveni:
 # ==========================================
 with tab_data:
     st.header("⚙️ Správa dat")
-    st.info("Základní maximální délka svitku/tabule je nyní nastavena na 50 metrů (50 000 mm).")
     st.session_state.materialy_df = st.data_editor(st.session_state.materialy_df, num_rows="dynamic", key="em", use_container_width=True)
     st.session_state.prvky_df = st.data_editor(st.session_state.prvky_df, num_rows="dynamic", key="ep", use_container_width=True)
 
