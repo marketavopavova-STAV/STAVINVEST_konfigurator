@@ -2,16 +2,17 @@ import streamlit as st
 import pandas as pd
 import math
 import io
+import copy
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 
 # --- NASTAVENÍ STRÁNKY ---
 st.set_page_config(page_title="Stavinvest Konfigurátor", page_icon="✂️", layout="wide")
-st.title("✂️ Stavinvest Konfigurátor vč. Absolutního 2D Tetrisu (MaxRects)")
+st.title("✂️ Stavinvest Konfigurátor vč. Multi-Heuristického Tetrisu")
 
 # ==========================================
-# ČISTOKREVNÝ 2D TETRIS (MAXRECTS ALGORITMUS)
-# Ignoruje omezení gilotinového řezu = maximalizuje využití prostoru
+# ČISTOKREVNÝ MAXRECTS TETRIS (MULTI-SORT)
+# Zkouší 4 různé strategie a vybírá tu s nejkratším prořezem
 # ==========================================
 class FreeRect:
     def __init__(self, x, y, w, h):
@@ -28,67 +29,50 @@ class FreeRect:
         return not (self.x >= o.x + o.w or self.x + self.w <= o.x or 
                     self.y >= o.y + o.h or self.y + self.h <= o.y)
 
-def pack_maxrects_multibin(items, coil_w, max_l, allow_rotation=True):
-    # Řazení primárně podle plochy (od největších kusů po nejmenší)
-    items.sort(key=lambda x: (x['L'] * x['rš'], max(x['L'], x['rš'])), reverse=True)
+def pack_maxrects_single(items, coil_w, max_l, allow_rotation):
     bins = []
-    
     for item in items:
         best_bin_idx = -1
         best_node = None
         best_rotated = False
         
-        # Hodnotíme místo tak, aby se co nejméně prodlužoval celkový odvinutý svitek
-        best_score1 = float('inf') # Hodnota X konce svitku
-        best_score2 = float('inf') # Hodnota Y (aby se to skládalo hezky dolů)
-        best_score3 = float('inf') # Hodnota X začátku (co nejvíce vlevo)
+        # Hodnotíme: Minimální prodloužení svitku (x), pak co nejvíce vlevo a dole
+        best_score1, best_score2, best_score3 = float('inf'), float('inf'), float('inf')
         
         for b_idx, b in enumerate(bins):
             current_max_x = max([0] + [p['x'] + p['draw_w'] for p in b['placed']])
             for fr in b['free_rects']:
-                # 1. BEZ rotace
+                # Bez rotace
                 if fr.w >= item['L'] and fr.h >= item['rš']:
                     w, h = item['L'], item['rš']
                     new_max_x = max(current_max_x, fr.x + w)
-                    if (new_max_x < best_score1) or \
-                       (new_max_x == best_score1 and fr.y < best_score2) or \
-                       (new_max_x == best_score1 and fr.y == best_score2 and fr.x < best_score3):
-                        best_score1, best_score2, best_score3 = new_max_x, fr.y, fr.x
+                    if (new_max_x < best_score1) or (new_max_x == best_score1 and fr.x < best_score2) or (new_max_x == best_score1 and fr.x == best_score2 and fr.y < best_score3):
+                        best_score1, best_score2, best_score3 = new_max_x, fr.x, fr.y
                         best_bin_idx, best_rotated, best_node = b_idx, False, fr
                         
-                # 2. S rotací
+                # S rotací
                 if allow_rotation and fr.w >= item['rš'] and fr.h >= item['L']:
                     w, h = item['rš'], item['L']
                     new_max_x = max(current_max_x, fr.x + w)
-                    if (new_max_x < best_score1) or \
-                       (new_max_x == best_score1 and fr.y < best_score2) or \
-                       (new_max_x == best_score1 and fr.y == best_score2 and fr.x < best_score3):
-                        best_score1, best_score2, best_score3 = new_max_x, fr.y, fr.x
+                    if (new_max_x < best_score1) or (new_max_x == best_score1 and fr.x < best_score2) or (new_max_x == best_score1 and fr.x == best_score2 and fr.y < best_score3):
+                        best_score1, best_score2, best_score3 = new_max_x, fr.x, fr.y
                         best_bin_idx, best_rotated, best_node = b_idx, True, fr
                         
         if best_bin_idx == -1:
-            # Nikam se to nevešlo = zakládáme nový svitek
             will_rotate = False
             if allow_rotation and coil_w >= item['L'] and item['rš'] <= max_l:
-                if item['rš'] < item['L']: 
-                    will_rotate = True
+                if item['rš'] < item['L']: will_rotate = True
             
             w = item['rš'] if will_rotate else item['L']
             h = item['L'] if will_rotate else item['rš']
             actual_max_l = max(max_l, w)
             
-            new_bin = {
-                'free_rects': [FreeRect(0, 0, actual_max_l, coil_w)], 
-                'placed': [], 
-                'w_coil': coil_w, 
-                'max_l': actual_max_l
-            }
+            new_bin = {'free_rects': [FreeRect(0, 0, actual_max_l, coil_w)], 'placed': [], 'w_coil': coil_w, 'max_l': actual_max_l}
             bins.append(new_bin)
             best_bin_idx = len(bins) - 1
             best_node = new_bin['free_rects'][0]
             best_rotated = will_rotate
             
-        # Zapsání pozice
         w = item['rš'] if best_rotated else item['L']
         h = item['L'] if best_rotated else item['rš']
         item['rotated'] = best_rotated
@@ -97,11 +81,9 @@ def pack_maxrects_multibin(items, coil_w, max_l, allow_rotation=True):
         
         target_bin = bins[best_bin_idx]
         target_bin['placed'].append(item)
-        
         placed_rect = FreeRect(item['x'], item['y'], w, h)
-        new_free_rects = []
         
-        # Překreslení volných míst - MaxRects split logic
+        new_free_rects = []
         for fr in target_bin['free_rects']:
             if fr.intersects(placed_rect):
                 if placed_rect.y + placed_rect.h < fr.y + fr.h:
@@ -115,7 +97,6 @@ def pack_maxrects_multibin(items, coil_w, max_l, allow_rotation=True):
             else:
                 new_free_rects.append(fr)
                 
-        # Odstranění "pohlcených" volných míst
         filtered_free_rects = []
         for i, fr1 in enumerate(new_free_rects):
             contained = False
@@ -132,6 +113,32 @@ def pack_maxrects_multibin(items, coil_w, max_l, allow_rotation=True):
         target_bin['free_rects'] = filtered_free_rects
         
     return bins
+
+def pack_optimal_multibin(items, coil_w, max_l, allow_rotation=True):
+    # Definice 4 různých logik pro skládání (plocha, délka, šířka atd.)
+    sort_keys = [
+        lambda x: (x['L'] * x['rš'], max(x['L'], x['rš'])),
+        lambda x: (max(x['L'], x['rš']), x['L'] * x['rš']),
+        lambda x: (x['L'], x['rš']),
+        lambda x: (x['rš'], x['L'])
+    ]
+    
+    best_bins = None
+    best_len = float('inf')
+    
+    # Počítač vyzkouší všechny 4 způsoby a vybere ten nejúspornější
+    for key in sort_keys:
+        test_items = copy.deepcopy(items)
+        test_items.sort(key=key, reverse=True)
+        bins = pack_maxrects_single(test_items, coil_w, max_l, allow_rotation)
+        
+        total_len = sum(max([0] + [p['x'] + p['draw_w'] for p in b['placed']]) for b in bins)
+            
+        if total_len < best_len:
+            best_len = total_len
+            best_bins = bins
+            
+    return best_bins
 
 # --- INICIALIZACE NASTAVENÍ ---
 if 'config' not in st.session_state:
@@ -212,7 +219,7 @@ with tab_nastaveni:
         st.session_state.config["presah"] = st.number_input("Přesah spojů (mm)", value=int(st.session_state.config["presah"]))
     with c2:
         st.session_state.config["max_delka"] = st.number_input("Délka ohýbačky (mm)", value=int(st.session_state.config["max_delka"]))
-        st.session_state.config["povolit_rotaci"] = st.checkbox("🔄 Povolit otáčení dílů o 90° (Výrazná úspora materiálu)", value=st.session_state.config["povolit_rotaci"])
+        st.session_state.config["povolit_rotaci"] = st.checkbox("🔄 Povolit otáčení dílů o 90°", value=st.session_state.config["povolit_rotaci"])
 
 # ==========================================
 # ZÁLOŽKA: DATA
@@ -279,7 +286,8 @@ with tab_kalk:
                     L_seg = (L_mm + (seg - 1) * conf["presah"]) / seg
                     
                     if conf["povolit_rotaci"]:
-                        vejde_se = (p_data["RŠ (mm)"] <= m_data["Šířka (mm)"]) or (L_seg <= m_data["Šířka (mm)"] and p_data["RŠ (mm)"] <= m_data["Max délka tabule (mm)"])
+                        vejde_se = (p_data["RŠ (mm)"] <= m_data["Šířka (mm)"]) or \
+                                   (L_seg <= m_data["Šířka (mm)"] and p_data["RŠ (mm)"] <= m_data["Max délka tabule (mm)"])
                     else:
                         vejde_se = (p_data["RŠ (mm)"] <= m_data["Šířka (mm)"])
                         
@@ -303,7 +311,7 @@ with tab_kalk:
                     cena_m2 = mat_dict[mat_name]["Cena/m2"]
                     max_tab_len = mat_dict[mat_name]["Max délka tabule (mm)"]
                     
-                    bins = pack_maxrects_multibin(items, w_coil, max_tab_len, conf["povolit_rotaci"])
+                    bins = pack_optimal_multibin(items, w_coil, max_tab_len, conf["povolit_rotaci"])
                     
                     if bins:
                         tot_odvinuto = 0; tot_plocha = 0; tot_cena = 0
