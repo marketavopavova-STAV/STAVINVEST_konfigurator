@@ -7,10 +7,11 @@ import matplotlib.patches as patches
 
 # --- NASTAVENÍ STRÁNKY ---
 st.set_page_config(page_title="Stavinvest Konfigurátor", page_icon="✂️", layout="wide")
-st.title("✂️ Stavinvest Konfigurátor vč. Globálního 2D Tetrisu")
+st.title("✂️ Stavinvest Konfigurátor vč. Absolutního 2D Tetrisu (MaxRects)")
 
 # ==========================================
-# CHYTRÝ 2D TETRIS (GLOBÁLNÍ MINIMALIZACE ODVINU + ROTACE)
+# ČISTOKREVNÝ 2D TETRIS (MAXRECTS ALGORITMUS)
+# Ignoruje omezení gilotinového řezu = maximalizuje využití prostoru
 # ==========================================
 class FreeRect:
     def __init__(self, x, y, w, h):
@@ -18,123 +19,118 @@ class FreeRect:
         self.y = y
         self.w = w
         self.h = h
+        
+    def contains(self, o):
+        return (self.x <= o.x and self.y <= o.y and 
+                self.x + self.w >= o.x + o.w and self.y + self.h >= o.y + o.h)
+        
+    def intersects(self, o):
+        return not (self.x >= o.x + o.w or self.x + self.w <= o.x or 
+                    self.y >= o.y + o.h or self.y + self.h <= o.y)
 
-def pack_guillotine_multibin(items, coil_w, max_l, allow_rotation=True):
+def pack_maxrects_multibin(items, coil_w, max_l, allow_rotation=True):
+    # Řazení primárně podle plochy (od největších kusů po nejmenší)
     items.sort(key=lambda x: (x['L'] * x['rš'], max(x['L'], x['rš'])), reverse=True)
     bins = []
     
     for item in items:
         best_bin_idx = -1
-        best_fr_idx = -1
-        best_score = (float('inf'), float('inf'), float('inf'), float('inf'))
+        best_node = None
         best_rotated = False
+        
+        # Hodnotíme místo tak, aby se co nejméně prodlužoval celkový odvinutý svitek
+        best_score1 = float('inf') # Hodnota X konce svitku
+        best_score2 = float('inf') # Hodnota Y (aby se to skládalo hezky dolů)
+        best_score3 = float('inf') # Hodnota X začátku (co nejvíce vlevo)
         
         for b_idx, b in enumerate(bins):
             current_max_x = max([0] + [p['x'] + p['draw_w'] for p in b['placed']])
-            
-            for i, fr in enumerate(b['free_rects']):
-                # 1. Zkouška BEZ rotace
+            for fr in b['free_rects']:
+                # 1. BEZ rotace
                 if fr.w >= item['L'] and fr.h >= item['rš']:
                     w, h = item['L'], item['rš']
                     new_max_x = max(current_max_x, fr.x + w)
-                    delta_x = new_max_x - current_max_x 
-                    fit_score = min(fr.w - w, fr.h - h)
-                    
-                    score = (delta_x, new_max_x, fr.y, fit_score)
-                    if score < best_score:
-                        best_score = score
-                        best_bin_idx = b_idx
-                        best_fr_idx = i
-                        best_rotated = False
-                
-                # 2. Zkouška S rotací o 90°
+                    if (new_max_x < best_score1) or \
+                       (new_max_x == best_score1 and fr.y < best_score2) or \
+                       (new_max_x == best_score1 and fr.y == best_score2 and fr.x < best_score3):
+                        best_score1, best_score2, best_score3 = new_max_x, fr.y, fr.x
+                        best_bin_idx, best_rotated, best_node = b_idx, False, fr
+                        
+                # 2. S rotací
                 if allow_rotation and fr.w >= item['rš'] and fr.h >= item['L']:
                     w, h = item['rš'], item['L']
                     new_max_x = max(current_max_x, fr.x + w)
-                    delta_x = new_max_x - current_max_x
-                    fit_score = min(fr.w - w, fr.h - h)
-                    
-                    score = (delta_x, new_max_x, fr.y, fit_score)
-                    if score < best_score:
-                        best_score = score
-                        best_bin_idx = b_idx
-                        best_fr_idx = i
-                        best_rotated = True
-        
-        if best_bin_idx != -1:
-            b = bins[best_bin_idx]
-            best_fr = b['free_rects'][best_fr_idx]
-            
-            w = item['rš'] if best_rotated else item['L']
-            h = item['L'] if best_rotated else item['rš']
-            
-            item['rotated'] = best_rotated
-            item['x'] = best_fr.x
-            item['y'] = best_fr.y
-            item['draw_w'] = w
-            item['draw_h'] = h
-            b['placed'].append(item)
-            
-            w_left = best_fr.w - w
-            h_left = best_fr.h - h
-            
-            area_top1 = w * h_left
-            area_right1 = w_left * best_fr.h
-            max_area1 = max(area_top1, area_right1)
-            
-            area_top2 = best_fr.w * h_left
-            area_right2 = w_left * h
-            max_area2 = max(area_top2, area_right2)
-            
-            if max_area1 >= max_area2:
-                fr_top = FreeRect(best_fr.x, best_fr.y + h, w, h_left)
-                fr_right = FreeRect(best_fr.x + w, best_fr.y, w_left, best_fr.h)
-            else:
-                fr_top = FreeRect(best_fr.x, best_fr.y + h, best_fr.w, h_left)
-                fr_right = FreeRect(best_fr.x + w, best_fr.y, w_left, h)
-                
-            b['free_rects'].pop(best_fr_idx)
-            if fr_top.w > 0 and fr_top.h > 0: b['free_rects'].append(fr_top)
-            if fr_right.w > 0 and fr_right.h > 0: b['free_rects'].append(fr_right)
-            
-        else:
+                    if (new_max_x < best_score1) or \
+                       (new_max_x == best_score1 and fr.y < best_score2) or \
+                       (new_max_x == best_score1 and fr.y == best_score2 and fr.x < best_score3):
+                        best_score1, best_score2, best_score3 = new_max_x, fr.y, fr.x
+                        best_bin_idx, best_rotated, best_node = b_idx, True, fr
+                        
+        if best_bin_idx == -1:
+            # Nikam se to nevešlo = zakládáme nový svitek
             will_rotate = False
             if allow_rotation and coil_w >= item['L'] and item['rš'] <= max_l:
                 if item['rš'] < item['L']: 
                     will_rotate = True
-                    
+            
             w = item['rš'] if will_rotate else item['L']
             h = item['L'] if will_rotate else item['rš']
-            
             actual_max_l = max(max_l, w)
-            new_bin = {'free_rects': [], 'placed': [], 'w_coil': coil_w, 'max_l': actual_max_l}
             
-            item['x'] = 0; item['y'] = 0; item['rotated'] = will_rotate
-            item['draw_w'] = w; item['draw_h'] = h
-            new_bin['placed'].append(item)
-            
-            w_left = actual_max_l - w
-            h_left = coil_w - h
-            
-            area_top1 = w * h_left
-            area_right1 = w_left * coil_w
-            max_area1 = max(area_top1, area_right1)
-            
-            area_top2 = actual_max_l * h_left
-            area_right2 = w_left * h
-            max_area2 = max(area_top2, area_right2)
-            
-            if max_area1 >= max_area2:
-                fr_top = FreeRect(0, h, w, h_left)
-                fr_right = FreeRect(w, 0, w_left, coil_w)
-            else:
-                fr_top = FreeRect(0, h, actual_max_l, h_left)
-                fr_right = FreeRect(w, 0, w_left, h)
-                
-            if fr_top.w > 0 and fr_top.h > 0: new_bin['free_rects'].append(fr_top)
-            if fr_right.w > 0 and fr_right.h > 0: new_bin['free_rects'].append(fr_right)
+            new_bin = {
+                'free_rects': [FreeRect(0, 0, actual_max_l, coil_w)], 
+                'placed': [], 
+                'w_coil': coil_w, 
+                'max_l': actual_max_l
+            }
             bins.append(new_bin)
+            best_bin_idx = len(bins) - 1
+            best_node = new_bin['free_rects'][0]
+            best_rotated = will_rotate
             
+        # Zapsání pozice
+        w = item['rš'] if best_rotated else item['L']
+        h = item['L'] if best_rotated else item['rš']
+        item['rotated'] = best_rotated
+        item['x'], item['y'] = best_node.x, best_node.y
+        item['draw_w'], item['draw_h'] = w, h
+        
+        target_bin = bins[best_bin_idx]
+        target_bin['placed'].append(item)
+        
+        placed_rect = FreeRect(item['x'], item['y'], w, h)
+        new_free_rects = []
+        
+        # Překreslení volných míst - MaxRects split logic
+        for fr in target_bin['free_rects']:
+            if fr.intersects(placed_rect):
+                if placed_rect.y + placed_rect.h < fr.y + fr.h:
+                    new_free_rects.append(FreeRect(fr.x, placed_rect.y + placed_rect.h, fr.w, fr.y + fr.h - (placed_rect.y + placed_rect.h)))
+                if placed_rect.y > fr.y:
+                    new_free_rects.append(FreeRect(fr.x, fr.y, fr.w, placed_rect.y - fr.y))
+                if placed_rect.x > fr.x:
+                    new_free_rects.append(FreeRect(fr.x, fr.y, placed_rect.x - fr.x, fr.h))
+                if placed_rect.x + placed_rect.w < fr.x + fr.w:
+                    new_free_rects.append(FreeRect(placed_rect.x + placed_rect.w, fr.y, fr.x + fr.w - (placed_rect.x + placed_rect.w), fr.h))
+            else:
+                new_free_rects.append(fr)
+                
+        # Odstranění "pohlcených" volných míst
+        filtered_free_rects = []
+        for i, fr1 in enumerate(new_free_rects):
+            contained = False
+            for j in range(len(new_free_rects)):
+                if i == j: continue
+                fr2 = new_free_rects[j]
+                if fr2.contains(fr1):
+                    if fr2.x == fr1.x and fr2.y == fr1.y and fr2.w == fr1.w and fr2.h == fr1.h:
+                        if j < i: contained = True; break
+                    else:
+                        contained = True; break
+            if not contained:
+                filtered_free_rects.append(fr1)
+        target_bin['free_rects'] = filtered_free_rects
+        
     return bins
 
 # --- INICIALIZACE NASTAVENÍ ---
@@ -143,27 +139,28 @@ if 'config' not in st.session_state:
 
 # --- NAČTENÍ KOMPLETNÍCH DAT Z EXCELU ---
 if 'materialy_df' not in st.session_state:
-    st.session_state.materialy_df = pd.DataFrame([
-        {"Materiál": "FeZn svitek 0,55 mm", "Šířka (mm)": 1250, "Cena/m2": 200.0, "Max délka tabule (mm)": 10000},
-        {"Materiál": "FeZn svitek lak PES 0,5 mm std barvy", "Šířka (mm)": 2000, "Cena/m2": 270.0, "Max délka tabule (mm)": 10000},
-        {"Materiál": "FeZn svitek lak PES 0,5 mm nestandard", "Šířka (mm)": 1000, "Cena/m2": 288.0, "Max délka tabule (mm)": 10000},
-        {"Materiál": "Titanzinek 0,6 mm", "Šířka (mm)": 1500, "Cena/m2": 611.0, "Max délka tabule (mm)": 10000},
-        {"Materiál": "Titanzinek 0,7 mm", "Šířka (mm)": 1250, "Cena/m2": 714.0, "Max délka tabule (mm)": 10000},
-        {"Materiál": "Cu svitek 0,55 mm", "Šířka (mm)": 2000, "Cena/m2": 2119.0, "Max délka tabule (mm)": 10000},
-        {"Materiál": "Hliník 0,6 mm J+SF PES (MTC)", "Šířka (mm)": 1000, "Cena/m2": 400.0, "Max délka tabule (mm)": 10000},
-        {"Materiál": "Hliník 0,7 mm O+SF PES (MTC)", "Šířka (mm)": 1500, "Cena/m2": 530.0, "Max délka tabule (mm)": 10000},
-        {"Materiál": "Comax FALC 0,7mm PES", "Šířka (mm)": 1750, "Cena/m2": 550.0, "Max délka tabule (mm)": 10000},
-        {"Materiál": "Comax FALC 0,7mm Cortex", "Šířka (mm)": 2500, "Cena/m2": 590.0, "Max délka tabule (mm)": 10000},
-        {"Materiál": "Prefa CLR", "Šířka (mm)": 1300, "Cena/m2": 457.0, "Max délka tabule (mm)": 10000},
-        {"Materiál": "PREFA Prefalz", "Šířka (mm)": 1700, "Cena/m2": 580.0, "Max délka tabule (mm)": 10000},
-        {"Materiál": "PVC ROOFPLAN 7035", "Šířka (mm)": 1800, "Cena/m2": 591.0, "Max délka tabule (mm)": 10000},
-        {"Materiál": "Bauder PVC svitek 7035", "Šířka (mm)": 2600, "Cena/m2": 840.0, "Max délka tabule (mm)": 10000},
-        {"Materiál": "ATYP", "Šířka (mm)": 1250, "Cena/m2": 0.0, "Max délka tabule (mm)": 10000},
-        {"Materiál": "Výroba z materiálu zákazníka", "Šířka (mm)": 1250, "Cena/m2": 0.0, "Max délka tabule (mm)": 10000}
-    ])
+    m_data = [
+        {"Materiál": "FeZn svitek 0,55 mm", "Šířka (mm)": 1250, "Cena/m2": 200.0, "Max délka tabule (mm)": 50000},
+        {"Materiál": "FeZn svitek lak PES 0,5 mm std barvy", "Šířka (mm)": 2000, "Cena/m2": 270.0, "Max délka tabule (mm)": 50000},
+        {"Materiál": "FeZn svitek lak PES 0,5 mm nestandard", "Šířka (mm)": 1000, "Cena/m2": 288.0, "Max délka tabule (mm)": 50000},
+        {"Materiál": "Titanzinek 0,6 mm", "Šířka (mm)": 1500, "Cena/m2": 611.0, "Max délka tabule (mm)": 50000},
+        {"Materiál": "Titanzinek 0,7 mm", "Šířka (mm)": 1250, "Cena/m2": 714.0, "Max délka tabule (mm)": 50000},
+        {"Materiál": "Cu svitek 0,55 mm", "Šířka (mm)": 2000, "Cena/m2": 2119.0, "Max délka tabule (mm)": 50000},
+        {"Materiál": "Hliník 0,6 mm J+SF PES (MTC)", "Šířka (mm)": 1000, "Cena/m2": 400.0, "Max délka tabule (mm)": 50000},
+        {"Materiál": "Hliník 0,7 mm O+SF PES (MTC)", "Šířka (mm)": 1500, "Cena/m2": 530.0, "Max délka tabule (mm)": 50000},
+        {"Materiál": "Comax FALC 0,7mm PES", "Šířka (mm)": 1750, "Cena/m2": 550.0, "Max délka tabule (mm)": 50000},
+        {"Materiál": "Comax FALC 0,7mm Cortex", "Šířka (mm)": 2500, "Cena/m2": 590.0, "Max délka tabule (mm)": 50000},
+        {"Materiál": "Prefa CLR", "Šířka (mm)": 1300, "Cena/m2": 457.0, "Max délka tabule (mm)": 50000},
+        {"Materiál": "PREFA Prefalz", "Šířka (mm)": 1700, "Cena/m2": 580.0, "Max délka tabule (mm)": 50000},
+        {"Materiál": "PVC ROOFPLAN 7035", "Šířka (mm)": 1800, "Cena/m2": 591.0, "Max délka tabule (mm)": 50000},
+        {"Materiál": "Bauder PVC svitek 7035", "Šířka (mm)": 2600, "Cena/m2": 840.0, "Max délka tabule (mm)": 50000},
+        {"Materiál": "ATYP", "Šířka (mm)": 1250, "Cena/m2": 0.0, "Max délka tabule (mm)": 50000},
+        {"Materiál": "Výroba z materiálu zákazníka", "Šířka (mm)": 1250, "Cena/m2": 0.0, "Max délka tabule (mm)": 50000}
+    ]
+    st.session_state.materialy_df = pd.DataFrame(m_data)
 
 if 'prvky_df' not in st.session_state:
-    st.session_state.prvky_df = pd.DataFrame([
+    p_data = [
         {"Typ prvku": "závětrná lišta spodní r.š.250", "RŠ (mm)": 250, "Ohyby": 6},
         {"Typ prvku": "závětrná lišta spodní r.š.330", "RŠ (mm)": 333, "Ohyby": 6},
         {"Typ prvku": "závětrná lišta spodní r.š.410", "RŠ (mm)": 410, "Ohyby": 6},
@@ -192,7 +189,8 @@ if 'prvky_df' not in st.session_state:
         {"Typ prvku": "atypický výrobek rš 251 - 333", "RŠ (mm)": 333, "Ohyby": 9},
         {"Typ prvku": "atypický výrobek rš 334 - 500", "RŠ (mm)": 500, "Ohyby": 9},
         {"Typ prvku": "atypický výrobek rš 501 - 1250", "RŠ (mm)": 1250, "Ohyby": 9}
-    ])
+    ]
+    st.session_state.prvky_df = pd.DataFrame(p_data)
 
 if 'zakazka' not in st.session_state:
     st.session_state.zakazka = []
@@ -221,6 +219,7 @@ with tab_nastaveni:
 # ==========================================
 with tab_data:
     st.header("⚙️ Správa dat")
+    st.info("Základní maximální délka svitku/tabule je nyní nastavena na 50 metrů (50 000 mm).")
     st.session_state.materialy_df = st.data_editor(st.session_state.materialy_df, num_rows="dynamic", key="em", use_container_width=True)
     st.session_state.prvky_df = st.data_editor(st.session_state.prvky_df, num_rows="dynamic", key="ep", use_container_width=True)
 
@@ -247,7 +246,6 @@ with tab_kalk:
     with col_res:
         st.header("Výpočet a Optimalizace")
         if st.session_state.zakazka:
-            # INTERAKTIVNÍ TABULKA (Možnost editace)
             df_zakazka = pd.DataFrame(st.session_state.zakazka)
             df_zakazka.index = df_zakazka.index + 1
             
@@ -280,10 +278,8 @@ with tab_kalk:
                     seg = 1 if L_mm <= conf["max_delka"] else math.ceil((L_mm - conf["presah"]) / (conf["max_delka"] - conf["presah"]))
                     L_seg = (L_mm + (seg - 1) * conf["presah"]) / seg
                     
-                    # Rozděleno pro bezpečné zkopírování
                     if conf["povolit_rotaci"]:
-                        vejde_se = (p_data["RŠ (mm)"] <= m_data["Šířka (mm)"]) or \
-                                   (L_seg <= m_data["Šířka (mm)"] and p_data["RŠ (mm)"] <= m_data["Max délka tabule (mm)"])
+                        vejde_se = (p_data["RŠ (mm)"] <= m_data["Šířka (mm)"]) or (L_seg <= m_data["Šířka (mm)"] and p_data["RŠ (mm)"] <= m_data["Max délka tabule (mm)"])
                     else:
                         vejde_se = (p_data["RŠ (mm)"] <= m_data["Šířka (mm)"])
                         
@@ -307,7 +303,7 @@ with tab_kalk:
                     cena_m2 = mat_dict[mat_name]["Cena/m2"]
                     max_tab_len = mat_dict[mat_name]["Max délka tabule (mm)"]
                     
-                    bins = pack_guillotine_multibin(items, w_coil, max_tab_len, conf["povolit_rotaci"])
+                    bins = pack_maxrects_multibin(items, w_coil, max_tab_len, conf["povolit_rotaci"])
                     
                     if bins:
                         tot_odvinuto = 0; tot_plocha = 0; tot_cena = 0
@@ -366,7 +362,7 @@ with tab_nakres:
                 odvinuto_mm = b['odvinuto_mm']
                 w_coil = b['w_coil']
                 
-                st.write(f"**Pás {i+1}:** Odstřihnout **{odvinuto_mm / 1000:.2f} m** (Šířka svitku: {w_coil} mm, Účtovaná plocha: **{(odvinuto_mm/1000)*(w_coil/1000):.2f} m2**)")
+                st.write(f"**Svitek {i+1}:** Odstřihnout/Odvinout **{odvinuto_mm / 1000:.2f} m** (Šířka svitku: {w_coil} mm, Účtovaná plocha: **{(odvinuto_mm/1000)*(w_coil/1000):.2f} m2**)")
                 
                 fig, ax = plt.subplots(figsize=(12, 2.5))
                 ax.add_patch(patches.Rectangle((0, 0), odvinuto_mm, w_coil, fill=False, edgecolor='black', linewidth=2))
