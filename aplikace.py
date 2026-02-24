@@ -3,15 +3,16 @@ import pandas as pd
 import math
 import io
 import copy
+import random
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 
 # --- NASTAVENÍ STRÁNKY ---
 st.set_page_config(page_title="Stavinvest Konfigurátor", page_icon="✂️", layout="wide")
-st.title("✂️ Stavinvest Konfigurátor vč. Extrémního 2D Tetrisu")
+st.title("✂️ Stavinvest Konfigurátor vč. AI Simulačního Tetrisu")
 
 # ==========================================
-# EXTRÉMNÍ 2D TETRIS (MULTI-HEURISTIKA + BOTTOM-LEFT)
+# EXTRÉMNÍ 2D TETRIS (MAXRECTS + MONTE CARLO SIMULACE)
 # ==========================================
 class FreeRect:
     def __init__(self, x, y, w, h):
@@ -28,31 +29,26 @@ class FreeRect:
         return not (self.x >= o.x + o.w or self.x + self.w <= o.x or 
                     self.y >= o.y + o.h or self.y + self.h <= o.y)
 
-def pack_maxrects_single(items, coil_w, max_l, allow_rotation, heuristic_type):
+def pack_maxrects_single(items, coil_w, max_l, allow_rotation):
     bins = []
     
     for item in items:
         best_bin_idx = -1
         best_node = None
         best_rotated = False
+        
+        # Hodnotíme: Minimální prodloužení svitku (X), pak doraz doleva (X), pak dolů (Y)
         best_score = (float('inf'), float('inf'), float('inf'))
         
         for b_idx, b in enumerate(bins):
-            for i, fr in enumerate(b['free_rects']):
+            current_max_x = max([0] + [p['x'] + p['draw_w'] for p in b['placed']])
+            for fr in b['free_rects']:
                 
                 # 1. Zkouška BEZ rotace
                 if fr.w >= item['L'] and fr.h >= item['rš']:
                     w, h = item['L'], item['rš']
-                    # BL (Bottom-Left) = tahač doleva a dolů
-                    if heuristic_type == 'BL':
-                        score = (fr.x, fr.y, 0)
-                    # LB (Left-Bottom) = tahač dolů a doleva
-                    elif heuristic_type == 'LB':
-                        score = (fr.y, fr.x, 0)
-                    # BSSF = tahač doleva, pak co nejtěsnější mezera
-                    else:
-                        score = (fr.x, min(fr.w - w, fr.h - h), fr.y)
-                        
+                    new_max_x = max(current_max_x, fr.x + w)
+                    score = (new_max_x, fr.x, fr.y)
                     if score < best_score:
                         best_score = score
                         best_bin_idx, best_rotated, best_node = b_idx, False, fr
@@ -60,22 +56,17 @@ def pack_maxrects_single(items, coil_w, max_l, allow_rotation, heuristic_type):
                 # 2. Zkouška S rotací o 90°
                 if allow_rotation and fr.w >= item['rš'] and fr.h >= item['L']:
                     w, h = item['rš'], item['L']
-                    if heuristic_type == 'BL':
-                        score = (fr.x, fr.y, 0)
-                    elif heuristic_type == 'LB':
-                        score = (fr.y, fr.x, 0)
-                    else:
-                        score = (fr.x, min(fr.w - w, fr.h - h), fr.y)
-                        
+                    new_max_x = max(current_max_x, fr.x + w)
+                    score = (new_max_x, fr.x, fr.y)
                     if score < best_score:
                         best_score = score
                         best_bin_idx, best_rotated, best_node = b_idx, True, fr
                         
         if best_bin_idx == -1:
-            # Nikam se nevejde -> založit nový pás
             will_rotate = False
             if allow_rotation and coil_w >= item['L'] and item['rš'] <= max_l:
-                if item['rš'] < item['L']: will_rotate = True
+                if item['rš'] < item['L']: 
+                    will_rotate = True
             
             w = item['rš'] if will_rotate else item['L']
             h = item['L'] if will_rotate else item['rš']
@@ -97,7 +88,6 @@ def pack_maxrects_single(items, coil_w, max_l, allow_rotation, heuristic_type):
         target_bin['placed'].append(item)
         placed_rect = FreeRect(item['x'], item['y'], w, h)
         
-        # MaxRects - dělení volného prostoru
         new_free_rects = []
         for fr in target_bin['free_rects']:
             if fr.intersects(placed_rect):
@@ -112,7 +102,6 @@ def pack_maxrects_single(items, coil_w, max_l, allow_rotation, heuristic_type):
             else:
                 new_free_rects.append(fr)
                 
-        # Odstranění zbytečných obdélníků
         filtered_free_rects = []
         for i, fr1 in enumerate(new_free_rects):
             contained = False
@@ -131,33 +120,35 @@ def pack_maxrects_single(items, coil_w, max_l, allow_rotation, heuristic_type):
     return bins
 
 def pack_optimal_multibin(items, coil_w, max_l, allow_rotation=True):
-    # Definice různých způsobů řazení (čím větší díl, tím dřív se ho snaží umístit)
+    best_bins = None
+    best_len = float('inf')
+    
+    # 1. Klasické způsoby řazení (Plocha, Délka, Šířka)
     sort_keys = [
         lambda x: (x['L'] * x['rš'], max(x['L'], x['rš'])),
-        lambda x: (max(x['L'], x['rš']), min(x['L'], x['rš'])),
         lambda x: (x['L'], x['rš']),
         lambda x: (x['rš'], x['L'])
     ]
     
-    # 3 typy logiky vtlačování do děr (Doleva, Dolů, Na doraz)
-    heuristics = ['BL', 'LB', 'BSSF']
-    
-    best_bins = None
-    best_len = float('inf')
-    
-    # Aplikace zkouší 12 různých postupů
     for key in sort_keys:
-        for heur in heuristics:
-            test_items = copy.deepcopy(items)
-            test_items.sort(key=key, reverse=True)
-            bins = pack_maxrects_single(test_items, coil_w, max_l, allow_rotation, heur)
+        test_items = copy.deepcopy(items)
+        test_items.sort(key=key, reverse=True)
+        bins = pack_maxrects_single(test_items, coil_w, max_l, allow_rotation)
+        total_len = sum(max([0] + [p['x'] + p['draw_w'] for p in b['placed']]) for b in bins)
+        if total_len < best_len:
+            best_len = total_len
+            best_bins = bins
             
-            total_len = sum(max([0] + [p['x'] + p['draw_w'] for p in b['placed']]) for b in bins)
-                
-            if total_len < best_len:
-                best_len = total_len
-                best_bins = bins
-                
+    # 2. Monte Carlo Simulace: Umělá inteligence zkusí 100 náhodných kombinací (aby našla ideální shluk šířek)
+    for _ in range(100):
+        test_items = copy.deepcopy(items)
+        random.shuffle(test_items)
+        bins = pack_maxrects_single(test_items, coil_w, max_l, allow_rotation)
+        total_len = sum(max([0] + [p['x'] + p['draw_w'] for p in b['placed']]) for b in bins)
+        if total_len < best_len:
+            best_len = total_len
+            best_bins = bins
+            
     return best_bins
 
 # --- INICIALIZACE NASTAVENÍ ---
@@ -246,6 +237,7 @@ with tab_nastaveni:
 # ==========================================
 with tab_data:
     st.header("⚙️ Správa dat")
+    st.info("Základní maximální délka svitku/tabule je nyní nastavena na 50 metrů (50 000 mm).")
     st.session_state.materialy_df = st.data_editor(st.session_state.materialy_df, num_rows="dynamic", key="em", use_container_width=True)
     st.session_state.prvky_df = st.data_editor(st.session_state.prvky_df, num_rows="dynamic", key="ep", use_container_width=True)
 
@@ -290,72 +282,73 @@ with tab_kalk:
             
             st.session_state.zakazka = edited_zakazka_df.to_dict('records')
             
-            if st.button("🚀 SPOČÍTAT 2D", type="primary", use_container_width=True):
-                st.divider()
-                fyzicke_kusy = {}
-                cena_prace = 0
-                conf = st.session_state.config
-                
-                for p in st.session_state.zakazka:
-                    m_data = mat_dict[p["Materiál"]]
-                    p_data = prv_dict[p["Prvek"]]
-                    L_mm = p["Metrů"] * 1000
+            if st.button("🚀 SPOČÍTAT 2D TETRIS", type="primary", use_container_width=True):
+                with st.spinner("🧠 AI zkouší 100 různých způsobů skládání k nalezení minima prořezu..."):
+                    fyzicke_kusy = {}
+                    cena_prace = 0
+                    conf = st.session_state.config
                     
-                    seg = 1 if L_mm <= conf["max_delka"] else math.ceil((L_mm - conf["presah"]) / (conf["max_delka"] - conf["presah"]))
-                    L_seg = (L_mm + (seg - 1) * conf["presah"]) / seg
-                    
-                    if conf["povolit_rotaci"]:
-                        vejde_se = (p_data["RŠ (mm)"] <= m_data["Šířka (mm)"]) or \
-                                   (L_seg <= m_data["Šířka (mm)"] and p_data["RŠ (mm)"] <= m_data["Max délka tabule (mm)"])
-                    else:
-                        vejde_se = (p_data["RŠ (mm)"] <= m_data["Šířka (mm)"])
+                    for p in st.session_state.zakazka:
+                        m_data = mat_dict[p["Materiál"]]
+                        p_data = prv_dict[p["Prvek"]]
+                        L_mm = p["Metrů"] * 1000
                         
-                    if not vejde_se:
-                        st.error(f"CHYBA: Prvek '{p['Prvek']}' je moc široký na svitek {p['Materiál']}!")
-                        continue
-
-                    cena_prace += (p_data["Ohyby"] * conf["cena_ohyb"]) * seg * p["Kusů"]
-                    
-                    if p["Materiál"] not in fyzicke_kusy:
-                        fyzicke_kusy[p["Materiál"]] = []
+                        seg = 1 if L_mm <= conf["max_delka"] else math.ceil((L_mm - conf["presah"]) / (conf["max_delka"] - conf["presah"]))
+                        L_seg = (L_mm + (seg - 1) * conf["presah"]) / seg
                         
-                    for _ in range(int(p["Kusů"] * seg)):
-                        fyzicke_kusy[p["Materiál"]].append({"Prvek": p['Prvek'], "L": L_seg, "rš": p_data["RŠ (mm)"]})
-
-                vysledky_packing = {}
-                c_mat = 0; sumar = {}
-                
-                for mat_name, items in fyzicke_kusy.items():
-                    w_coil = mat_dict[mat_name]["Šířka (mm)"]
-                    cena_m2 = mat_dict[mat_name]["Cena/m2"]
-                    max_tab_len = mat_dict[mat_name]["Max délka tabule (mm)"]
-                    
-                    bins = pack_optimal_multibin(items, w_coil, max_tab_len, conf["povolit_rotaci"])
-                    
-                    if bins:
-                        tot_odvinuto = 0; tot_plocha = 0; tot_cena = 0
-                        vysledky_packing[mat_name] = bins
-                        
-                        for b in bins:
-                            max_x = max([p['x'] + p['draw_w'] for p in b['placed']])
-                            b['odvinuto_mm'] = max_x
-                            odvinuto_m = max_x / 1000
-                            plocha_m2 = odvinuto_m * (w_coil / 1000)
-                            cena_za_svitek = plocha_m2 * cena_m2
+                        if conf["povolit_rotaci"]:
+                            vejde_se = (p_data["RŠ (mm)"] <= m_data["Šířka (mm)"]) or \
+                                       (L_seg <= m_data["Šířka (mm)"] and p_data["RŠ (mm)"] <= m_data["Max délka tabule (mm)"])
+                        else:
+                            vejde_se = (p_data["RŠ (mm)"] <= m_data["Šířka (mm)"])
                             
-                            tot_odvinuto += odvinuto_m
-                            tot_plocha += plocha_m2
-                            tot_cena += cena_za_svitek
+                        if not vejde_se:
+                            st.error(f"CHYBA: Prvek '{p['Prvek']}' je moc široký na svitek {p['Materiál']}!")
+                            continue
+
+                        cena_prace += (p_data["Ohyby"] * conf["cena_ohyb"]) * seg * p["Kusů"]
+                        
+                        if p["Materiál"] not in fyzicke_kusy:
+                            fyzicke_kusy[p["Materiál"]] = []
                             
-                        c_mat += tot_cena
-                        sumar[mat_name] = {
-                            "Pásů/Tabulí (ks)": len(bins), 
-                            "Celkem odvinout (m)": tot_odvinuto, 
-                            "Plocha (m2)": tot_plocha, 
-                            "Cena": tot_cena
-                        }
-                
-                st.session_state.vysledky_packing = vysledky_packing
+                        for _ in range(int(p["Kusů"] * seg)):
+                            fyzicke_kusy[p["Materiál"]].append({"Prvek": p['Prvek'], "L": L_seg, "rš": p_data["RŠ (mm)"]})
+
+                    vysledky_packing = {}
+                    c_mat = 0; sumar = {}
+                    
+                    for mat_name, items in fyzicke_kusy.items():
+                        w_coil = mat_dict[mat_name]["Šířka (mm)"]
+                        cena_m2 = mat_dict[mat_name]["Cena/m2"]
+                        max_tab_len = mat_dict[mat_name]["Max délka tabule (mm)"]
+                        
+                        bins = pack_optimal_multibin(items, w_coil, max_tab_len, conf["povolit_rotaci"])
+                        
+                        if bins:
+                            tot_odvinuto = 0; tot_plocha = 0; tot_cena = 0
+                            vysledky_packing[mat_name] = bins
+                            
+                            for b in bins:
+                                max_x = max([p['x'] + p['draw_w'] for p in b['placed']])
+                                b['odvinuto_mm'] = max_x
+                                odvinuto_m = max_x / 1000
+                                plocha_m2 = odvinuto_m * (w_coil / 1000)
+                                cena_za_svitek = plocha_m2 * cena_m2
+                                
+                                tot_odvinuto += odvinuto_m
+                                tot_plocha += plocha_m2
+                                tot_cena += cena_za_svitek
+                                
+                            c_mat += tot_cena
+                            sumar[mat_name] = {
+                                "Pásů/Tabulí (ks)": len(bins), 
+                                "Celkem odvinout (m)": tot_odvinuto, 
+                                "Plocha (m2)": tot_plocha, 
+                                "Cena": tot_cena
+                            }
+                    
+                    st.session_state.vysledky_packing = vysledky_packing
+                    
                 st.subheader("Souhrnná tabulka materiálu")
                 st.dataframe(pd.DataFrame.from_dict(sumar, orient='index').style.format({
                     "Celkem odvinout (m)": "{:.2f}", 
