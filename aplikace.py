@@ -4,40 +4,134 @@ import math
 import io
 import copy
 import random
+from collections import defaultdict
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 
 # --- NASTAVENÍ STRÁNKY ---
 st.set_page_config(page_title="Stavinvest Konfigurátor", page_icon="✂️", layout="wide")
-st.title("✂️ Stavinvest Konfigurátor (Super-Algoritmus)")
+st.title("✂️ Stavinvest Konfigurátor vč. Super-Algoritmu (Skupiny + Zbytky)")
 
 # ==========================================
-# SUPER-ALGORITMUS: Kombinuje různé přístupy a vybírá vítěze s nejmenším odvinem!
+# SUPER-ALGORITMUS (MAXRECTS + PRUHY + SKUPINY VÝROBKŮ)
+# Zaručuje absolutní minimum odvinutého materiálu
 # ==========================================
 class FreeRect:
     def __init__(self, x, y, w, h):
         self.x = x; self.y = y; self.w = w; self.h = h
+        
+    def contains(self, o):
+        return (self.x <= o.x and self.y <= o.y and 
+                self.x + self.w >= o.x + o.w and self.y + self.h >= o.y + o.h)
+        
+    def intersects(self, o):
+        return not (self.x >= o.x + o.w or self.x + self.w <= o.x or 
+                    self.y >= o.y + o.h or self.y + self.h <= o.y)
 
-# --- METODA 1: PRUHOVÁ (Skvělá pro stejné okapnice) ---
+def pack_maxrects_single(items, coil_w, max_l, allow_rotation, heur):
+    bins = []
+    for item in items:
+        best_bin_idx = -1
+        best_node = None
+        best_rotated = False
+        best_score = (float('inf'), float('inf'), float('inf'))
+        
+        for b_idx, b in enumerate(bins):
+            current_max_x = max([0] + [p['x'] + p['draw_w'] for p in b['placed']])
+            for fr in b['free_rects']:
+                # BEZ ROTACE
+                if fr.w >= item['L'] and fr.h >= item['rš']:
+                    w, h = item['L'], item['rš']
+                    new_max = max(current_max_x, fr.x + w)
+                    if heur == 'LB': score = (new_max, fr.x, fr.y)
+                    else: score = (new_max, min(fr.w - w, fr.h - h), fr.y)
+                    
+                    if score < best_score:
+                        best_score = score
+                        best_bin_idx, best_rotated, best_node = b_idx, False, fr
+                        
+                # S ROTACÍ
+                if allow_rotation and fr.w >= item['rš'] and fr.h >= item['L']:
+                    w, h = item['rš'], item['L']
+                    new_max = max(current_max_x, fr.x + w)
+                    if heur == 'LB': score = (new_max, fr.x, fr.y)
+                    else: score = (new_max, min(fr.w - w, fr.h - h), fr.y)
+                    
+                    if score < best_score:
+                        best_score = score
+                        best_bin_idx, best_rotated, best_node = b_idx, True, fr
+                        
+        if best_bin_idx == -1:
+            will_rotate = False
+            if allow_rotation and coil_w >= item['L'] and item['rš'] <= max_l:
+                if item['rš'] < item['L']: will_rotate = True
+            
+            w = item['rš'] if will_rotate else item['L']
+            h = item['L'] if will_rotate else item['rš']
+            actual_max_l = max(max_l, w)
+            
+            new_bin = {'free_rects': [FreeRect(0, 0, actual_max_l, coil_w)], 'placed': [], 'w_coil': coil_w, 'max_l': actual_max_l}
+            bins.append(new_bin)
+            best_bin_idx = len(bins) - 1
+            best_node = new_bin['free_rects'][0]
+            best_rotated = will_rotate
+            
+        w = item['rš'] if best_rotated else item['L']
+        h = item['L'] if best_rotated else item['rš']
+        item['rotated'] = best_rotated
+        item['x'], item['y'] = best_node.x, best_node.y
+        item['draw_w'], item['draw_h'] = w, h
+        
+        target_bin = bins[best_bin_idx]
+        target_bin['placed'].append(item)
+        placed_rect = FreeRect(item['x'], item['y'], w, h)
+        
+        new_free_rects = []
+        for fr in target_bin['free_rects']:
+            if fr.intersects(placed_rect):
+                if placed_rect.y + placed_rect.h < fr.y + fr.h:
+                    new_free_rects.append(FreeRect(fr.x, placed_rect.y + placed_rect.h, fr.w, fr.y + fr.h - (placed_rect.y + placed_rect.h)))
+                if placed_rect.y > fr.y:
+                    new_free_rects.append(FreeRect(fr.x, fr.y, fr.w, placed_rect.y - fr.y))
+                if placed_rect.x > fr.x:
+                    new_free_rects.append(FreeRect(fr.x, fr.y, placed_rect.x - fr.x, fr.h))
+                if placed_rect.x + placed_rect.w < fr.x + fr.w:
+                    new_free_rects.append(FreeRect(placed_rect.x + placed_rect.w, fr.y, fr.x + fr.w - (placed_rect.x + placed_rect.w), fr.h))
+            else:
+                new_free_rects.append(fr)
+                
+        filtered_free_rects = []
+        for i, fr1 in enumerate(new_free_rects):
+            contained = False
+            for j in range(len(new_free_rects)):
+                if i == j: continue
+                fr2 = new_free_rects[j]
+                if fr2.contains(fr1):
+                    if fr2.x == fr1.x and fr2.y == fr1.y and fr2.w == fr1.w and fr2.h == fr1.h:
+                        if j < i: contained = True; break
+                    else:
+                        contained = True; break
+            if not contained:
+                filtered_free_rects.append(fr1)
+        target_bin['free_rects'] = filtered_free_rects
+        
+    for b in bins:
+        b['odvinuto_mm'] = max([0] + [p['x'] + p['draw_w'] for p in b['placed']])
+        
+    return bins
+
 def pack_tinsmith_strips(items, coil_w, max_l, allow_rotation):
     test_items = copy.deepcopy(items)
     test_items.sort(key=lambda x: (x['rš'], x['L']), reverse=True)
     bins = []
-    
     for item in test_items:
-        best_bin = None
-        best_strip = None
-        best_score = float('inf')
-        best_rotated = False
-        
+        best_bin = None; best_strip = None; best_score = float('inf'); best_rotated = False
         orientations = [(item['L'], item['rš'], False)]
-        if allow_rotation and item['L'] != item['rš']:
-            orientations.append((item['rš'], item['L'], True))
+        if allow_rotation and item['L'] != item['rš']: orientations.append((item['rš'], item['L'], True))
             
         for b in bins:
             bin_max_x = max([s['current_x'] for s in b['strips']] + [0])
             for w, h, rotated in orientations:
-                # Zkouška do existujícího pruhu
                 for s in b['strips']:
                     if s['rs'] >= h:
                         new_strip_x = s['current_x'] + w
@@ -46,8 +140,6 @@ def pack_tinsmith_strips(items, coil_w, max_l, allow_rotation):
                             score = new_bin_max_x * 10000 + (s['rs'] - h)
                             if score < best_score:
                                 best_score = score; best_bin = b; best_strip = s; best_rotated = rotated
-                                
-                # Zkouška nad existující pruhy
                 current_y = sum(s['rs'] for s in b['strips'])
                 if current_y + h <= coil_w and w <= max_l:
                     new_bin_max_x = max(bin_max_x, w)
@@ -70,16 +162,10 @@ def pack_tinsmith_strips(items, coil_w, max_l, allow_rotation):
                 best_strip['current_x'] += w
                 best_strip['items'].append(item)
         else:
-            if w <= max_l and h <= coil_w:
-                new_s = {'rs': h, 'y': 0, 'current_x': w, 'items': [item]}
-                item['x'] = 0; item['y'] = 0
-                new_b = {'w_coil': coil_w, 'strips': [new_s]}
-                bins.append(new_b)
-            else:
-                item['x'] = 0; item['y'] = 0
-                new_b = {'w_coil': coil_w, 'strips': [{'rs': h, 'y': 0, 'current_x': w, 'items': [item]}]}
-                bins.append(new_b)
-                
+            item['x'] = 0; item['y'] = 0
+            new_s = {'rs': h, 'y': 0, 'current_x': w, 'items': [item]}
+            bins.append({'w_coil': coil_w, 'strips': [new_s], 'max_l': max_l})
+            
     formatted_bins = []
     for b in bins:
         placed = []
@@ -88,112 +174,59 @@ def pack_tinsmith_strips(items, coil_w, max_l, allow_rotation):
         formatted_bins.append({'w_coil': b['w_coil'], 'odvinuto_mm': max_x, 'placed': placed})
     return formatted_bins
 
-# --- METODA 2: GILOTINA (Skvělá na kombinování rozměrů) ---
-def pack_guillotine_single(items, coil_w, max_l, allow_rotation):
-    bins = []
-    for item in items:
-        best_bin_idx = -1; best_fr_idx = -1; best_score = (float('inf'), float('inf'), float('inf')); best_rotated = False
-        
-        for b_idx, b in enumerate(bins):
-            current_max_x = max([0] + [p['x'] + p['draw_w'] for p in b['placed']])
-            for i, fr in enumerate(b['free_rects']):
-                if fr.w >= item['L'] and fr.h >= item['rš']:
-                    w, h = item['L'], item['rš']
-                    score = (max(current_max_x, fr.x + w), min(fr.w - w, fr.h - h), fr.y)
-                    if score < best_score:
-                        best_score = score; best_bin_idx = b_idx; best_fr_idx = i; best_rotated = False
-                if allow_rotation and fr.w >= item['rš'] and fr.h >= item['L']:
-                    w, h = item['rš'], item['L']
-                    score = (max(current_max_x, fr.x + w), min(fr.w - w, fr.h - h), fr.y)
-                    if score < best_score:
-                        best_score = score; best_bin_idx = b_idx; best_fr_idx = i; best_rotated = True
-                        
-        if best_bin_idx != -1:
-            b = bins[best_bin_idx]; best_fr = b['free_rects'][best_fr_idx]
-            w = item['rš'] if best_rotated else item['L']
-            h = item['L'] if best_rotated else item['rš']
-            item['rotated'] = best_rotated; item['x'] = best_fr.x; item['y'] = best_fr.y
-            item['draw_w'] = w; item['draw_h'] = h
-            b['placed'].append(item)
-            
-            w_left = best_fr.w - w; h_left = best_fr.h - h
-            if (w * h_left) > (w_left * h):
-                fr_top = FreeRect(best_fr.x, best_fr.y + h, w, h_left)
-                fr_right = FreeRect(best_fr.x + w, best_fr.y, w_left, best_fr.h)
-            else:
-                fr_top = FreeRect(best_fr.x, best_fr.y + h, best_fr.w, h_left)
-                fr_right = FreeRect(best_fr.x + w, best_fr.y, w_left, h)
-                
-            b['free_rects'].pop(best_fr_idx)
-            if fr_top.w > 0 and fr_top.h > 0: b['free_rects'].append(fr_top)
-            if fr_right.w > 0 and fr_right.h > 0: b['free_rects'].append(fr_right)
-            
-        else:
-            will_rotate = False
-            if allow_rotation and coil_w >= item['L'] and item['rš'] <= max_l:
-                if item['rš'] < item['L']: will_rotate = True
-            w = item['rš'] if will_rotate else item['L']
-            h = item['L'] if will_rotate else item['rš']
-            
-            actual_max_l = max(max_l, w)
-            new_bin = {'free_rects': [], 'placed': [], 'w_coil': coil_w, 'max_l': actual_max_l}
-            item['x'] = 0; item['y'] = 0; item['rotated'] = will_rotate; item['draw_w'] = w; item['draw_h'] = h
-            new_bin['placed'].append(item)
-            
-            w_left = actual_max_l - w; h_left = coil_w - h
-            if (w * h_left) > (w_left * h):
-                fr_top = FreeRect(0, h, w, h_left); fr_right = FreeRect(w, 0, w_left, coil_w)
-            else:
-                fr_top = FreeRect(0, h, actual_max_l, h_left); fr_right = FreeRect(w, 0, w_left, h)
-                
-            if fr_top.w > 0 and fr_top.h > 0: new_bin['free_rects'].append(fr_top)
-            if fr_right.w > 0 and fr_right.h > 0: new_bin['free_rects'].append(fr_right)
-            bins.append(new_bin)
-            
-    for b in bins:
-        b['odvinuto_mm'] = max([0] + [p['x'] + p['draw_w'] for p in b['placed']])
-    return bins
-
-# --- SPRAVEDLIVÝ SOUBOJ ALGORITMŮ ---
 def pack_optimal_multibin(items, coil_w, max_l, allow_rotation=True):
     best_bins = None
     best_len = float('inf')
     
-    # Kolo 1: Zkusit Pruhový systém (Často vyhrává pro stejné díly = 8 metrů)
+    # 1. Sesypání stejných výrobků k sobě (dle Vašeho požadavku)
+    groups = defaultdict(list)
+    for item in items:
+        groups[(item['L'], item['rš'])].append(item)
+    group_lists = list(groups.values())
+    
+    orders = []
+    # Čistě podle plochy
+    orders.append(sorted(items, key=lambda x: x['L']*x['rš'], reverse=True))
+    
+    # Skupiny při sobě (velké bloky jako první) -> TOHLE JE TA MAGIE PRO ZBYTKY!
+    groups_by_area = sorted(group_lists, key=lambda g: g[0]['L']*g[0]['rš']*len(g), reverse=True)
+    orders.append([item for g in groups_by_area for item in g])
+    
+    groups_by_piece = sorted(group_lists, key=lambda g: g[0]['L']*g[0]['rš'], reverse=True)
+    orders.append([item for g in groups_by_piece for item in g])
+    
+    # AI náhodné míchání bloků
+    for _ in range(40):
+        shuf_g = copy.copy(group_lists)
+        random.shuffle(shuf_g)
+        orders.append([item for g in shuf_g for item in g])
+        
+    for _ in range(20):
+        shuf_i = copy.copy(items)
+        random.shuffle(shuf_i)
+        orders.append(shuf_i)
+        
+    heuristics = ['LB', 'BSSF']
+    
+    for order in orders:
+        for heur in heuristics:
+            test_items = copy.deepcopy(order)
+            bins = pack_maxrects_single(test_items, coil_w, max_l, allow_rotation, heur)
+            tot_len = sum(b['odvinuto_mm'] for b in bins)
+            if tot_len < best_len:
+                best_len = tot_len
+                best_bins = bins
+                
+    # 2. Záloha: Test pruhového systému
     try:
-        bins_strips = pack_tinsmith_strips(items, coil_w, max_l, allow_rotation)
-        len_strips = sum(b['odvinuto_mm'] for b in bins_strips)
-        if len_strips < best_len:
-            best_len = len_strips
-            best_bins = bins_strips
+        bins_strip = pack_tinsmith_strips(copy.deepcopy(items), coil_w, max_l, allow_rotation)
+        tot_len_strip = sum(b['odvinuto_mm'] for b in bins_strip)
+        if tot_len_strip < best_len:
+            best_len = tot_len_strip
+            best_bins = bins_strip
     except Exception:
         pass
-
-    # Kolo 2: Gilotinové řazení
-    sort_keys = [
-        lambda x: (x['L'] * x['rš'], max(x['L'], x['rš'])),
-        lambda x: (x['L'], x['rš']),
-        lambda x: (x['rš'], x['L'])
-    ]
-    for key in sort_keys:
-        test_items = copy.deepcopy(items)
-        test_items.sort(key=key, reverse=True)
-        bins_g = pack_guillotine_single(test_items, coil_w, max_l, allow_rotation)
-        len_g = sum(b['odvinuto_mm'] for b in bins_g)
-        if len_g < best_len:
-            best_len = len_g
-            best_bins = bins_g
-            
-    # Kolo 3: Gilotinová Monte Carlo Simulace (Náhodné zaplňování)
-    for _ in range(50):
-        test_items = copy.deepcopy(items)
-        random.shuffle(test_items)
-        bins_g = pack_guillotine_single(test_items, coil_w, max_l, allow_rotation)
-        len_g = sum(b['odvinuto_mm'] for b in bins_g)
-        if len_g < best_len:
-            best_len = len_g
-            best_bins = bins_g
-            
+        
     return best_bins
 
 # --- INICIALIZACE NASTAVENÍ ---
@@ -328,7 +361,7 @@ with tab_kalk:
             st.session_state.zakazka = edited_zakazka_df.to_dict('records')
             
             if st.button("🚀 SPOČÍTAT S VYUŽITÍM AI", type="primary", use_container_width=True):
-                with st.spinner("🧠 AI testuje různé algoritmy pro nalezení absolutního minima materiálu..."):
+                with st.spinner("🧠 AI kombinuje bloky a zbytky... Testuje 150+ variant! Může to trvat 2 vteřiny."):
                     fyzicke_kusy = {}
                     cena_prace = 0
                     conf = st.session_state.config
