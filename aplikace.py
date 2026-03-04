@@ -9,72 +9,114 @@ import matplotlib.patches as patches
 
 # --- NASTAVENÍ STRÁNKY ---
 st.set_page_config(page_title="Stavinvest Konfigurátor", page_icon="✂️", layout="wide")
-st.title("✂️ Stavinvest Konfigurátor (Gilotinová AI pro klempíře)")
+st.title("✂️ Stavinvest Konfigurátor (Super-Algoritmus)")
 
 # ==========================================
-# GILOTINOVÝ TETRIS + MONTE CARLO SIMULACE
-# Vytváří pouze rovné řezy (snadné pro dílnu), ale minimalizuje odpad!
+# SUPER-ALGORITMUS: Kombinuje různé přístupy a vybírá vítěze s nejmenším odvinem!
 # ==========================================
 class FreeRect:
     def __init__(self, x, y, w, h):
-        self.x = x
-        self.y = y
-        self.w = w
-        self.h = h
+        self.x = x; self.y = y; self.w = w; self.h = h
 
-def pack_guillotine_single(items, coil_w, max_l, allow_rotation):
+# --- METODA 1: PRUHOVÁ (Skvělá pro stejné okapnice) ---
+def pack_tinsmith_strips(items, coil_w, max_l, allow_rotation):
+    test_items = copy.deepcopy(items)
+    test_items.sort(key=lambda x: (x['rš'], x['L']), reverse=True)
     bins = []
     
-    for item in items:
-        best_bin_idx = -1
-        best_fr_idx = -1
-        best_score = (float('inf'), float('inf'), float('inf'))
+    for item in test_items:
+        best_bin = None
+        best_strip = None
+        best_score = float('inf')
         best_rotated = False
+        
+        orientations = [(item['L'], item['rš'], False)]
+        if allow_rotation and item['L'] != item['rš']:
+            orientations.append((item['rš'], item['L'], True))
+            
+        for b in bins:
+            bin_max_x = max([s['current_x'] for s in b['strips']] + [0])
+            for w, h, rotated in orientations:
+                # Zkouška do existujícího pruhu
+                for s in b['strips']:
+                    if s['rs'] >= h:
+                        new_strip_x = s['current_x'] + w
+                        if new_strip_x <= max_l:
+                            new_bin_max_x = max(bin_max_x, new_strip_x)
+                            score = new_bin_max_x * 10000 + (s['rs'] - h)
+                            if score < best_score:
+                                best_score = score; best_bin = b; best_strip = s; best_rotated = rotated
+                                
+                # Zkouška nad existující pruhy
+                current_y = sum(s['rs'] for s in b['strips'])
+                if current_y + h <= coil_w and w <= max_l:
+                    new_bin_max_x = max(bin_max_x, w)
+                    score = new_bin_max_x * 10000 + 1
+                    if score < best_score:
+                        best_score = score; best_bin = b; best_strip = "NEW"; best_rotated = rotated
+                        
+        w, h, rotated = (item['rš'], item['L'], True) if best_rotated else (item['L'], item['rš'], False)
+        item['rotated'] = rotated
+        item['draw_w'] = w; item['draw_h'] = h
+        
+        if best_bin is not None:
+            if best_strip == "NEW":
+                current_y = sum(s['rs'] for s in best_bin['strips'])
+                new_s = {'rs': h, 'y': current_y, 'current_x': w, 'items': [item]}
+                item['x'] = 0; item['y'] = current_y
+                best_bin['strips'].append(new_s)
+            else:
+                item['x'] = best_strip['current_x']; item['y'] = best_strip['y']
+                best_strip['current_x'] += w
+                best_strip['items'].append(item)
+        else:
+            if w <= max_l and h <= coil_w:
+                new_s = {'rs': h, 'y': 0, 'current_x': w, 'items': [item]}
+                item['x'] = 0; item['y'] = 0
+                new_b = {'w_coil': coil_w, 'strips': [new_s]}
+                bins.append(new_b)
+            else:
+                item['x'] = 0; item['y'] = 0
+                new_b = {'w_coil': coil_w, 'strips': [{'rs': h, 'y': 0, 'current_x': w, 'items': [item]}]}
+                bins.append(new_b)
+                
+    formatted_bins = []
+    for b in bins:
+        placed = []
+        for s in b['strips']: placed.extend(s['items'])
+        max_x = max([s['current_x'] for s in b['strips']] + [0])
+        formatted_bins.append({'w_coil': b['w_coil'], 'odvinuto_mm': max_x, 'placed': placed})
+    return formatted_bins
+
+# --- METODA 2: GILOTINA (Skvělá na kombinování rozměrů) ---
+def pack_guillotine_single(items, coil_w, max_l, allow_rotation):
+    bins = []
+    for item in items:
+        best_bin_idx = -1; best_fr_idx = -1; best_score = (float('inf'), float('inf'), float('inf')); best_rotated = False
         
         for b_idx, b in enumerate(bins):
             current_max_x = max([0] + [p['x'] + p['draw_w'] for p in b['placed']])
-            
             for i, fr in enumerate(b['free_rects']):
-                # 1. Zkouška BEZ rotace
                 if fr.w >= item['L'] and fr.h >= item['rš']:
                     w, h = item['L'], item['rš']
-                    new_max_x = max(current_max_x, fr.x + w)
-                    score = (new_max_x, min(fr.w - w, fr.h - h), fr.y)
+                    score = (max(current_max_x, fr.x + w), min(fr.w - w, fr.h - h), fr.y)
                     if score < best_score:
-                        best_score = score
-                        best_bin_idx = b_idx
-                        best_fr_idx = i
-                        best_rotated = False
-                
-                # 2. Zkouška S rotací o 90°
+                        best_score = score; best_bin_idx = b_idx; best_fr_idx = i; best_rotated = False
                 if allow_rotation and fr.w >= item['rš'] and fr.h >= item['L']:
                     w, h = item['rš'], item['L']
-                    new_max_x = max(current_max_x, fr.x + w)
-                    score = (new_max_x, min(fr.w - w, fr.h - h), fr.y)
+                    score = (max(current_max_x, fr.x + w), min(fr.w - w, fr.h - h), fr.y)
                     if score < best_score:
-                        best_score = score
-                        best_bin_idx = b_idx
-                        best_fr_idx = i
-                        best_rotated = True
+                        best_score = score; best_bin_idx = b_idx; best_fr_idx = i; best_rotated = True
                         
         if best_bin_idx != -1:
-            b = bins[best_bin_idx]
-            best_fr = b['free_rects'][best_fr_idx]
-            
+            b = bins[best_bin_idx]; best_fr = b['free_rects'][best_fr_idx]
             w = item['rš'] if best_rotated else item['L']
             h = item['L'] if best_rotated else item['rš']
-            
-            item['rotated'] = best_rotated
-            item['x'] = best_fr.x
-            item['y'] = best_fr.y
-            item['draw_w'] = w
-            item['draw_h'] = h
+            item['rotated'] = best_rotated; item['x'] = best_fr.x; item['y'] = best_fr.y
+            item['draw_w'] = w; item['draw_h'] = h
             b['placed'].append(item)
             
-            # Gilotinový řez - zachování největší čisté plochy
-            w_left = best_fr.w - w
-            h_left = best_fr.h - h
-            
+            w_left = best_fr.w - w; h_left = best_fr.h - h
             if (w * h_left) > (w_left * h):
                 fr_top = FreeRect(best_fr.x, best_fr.y + h, w, h_left)
                 fr_right = FreeRect(best_fr.x + w, best_fr.y, w_left, best_fr.h)
@@ -90,65 +132,67 @@ def pack_guillotine_single(items, coil_w, max_l, allow_rotation):
             will_rotate = False
             if allow_rotation and coil_w >= item['L'] and item['rš'] <= max_l:
                 if item['rš'] < item['L']: will_rotate = True
-                    
             w = item['rš'] if will_rotate else item['L']
             h = item['L'] if will_rotate else item['rš']
             
             actual_max_l = max(max_l, w)
             new_bin = {'free_rects': [], 'placed': [], 'w_coil': coil_w, 'max_l': actual_max_l}
-            
-            item['x'] = 0
-            item['y'] = 0
-            item['rotated'] = will_rotate
-            item['draw_w'] = w
-            item['draw_h'] = h
+            item['x'] = 0; item['y'] = 0; item['rotated'] = will_rotate; item['draw_w'] = w; item['draw_h'] = h
             new_bin['placed'].append(item)
             
-            w_left = actual_max_l - w
-            h_left = coil_w - h
-            
+            w_left = actual_max_l - w; h_left = coil_w - h
             if (w * h_left) > (w_left * h):
-                fr_top = FreeRect(0, h, w, h_left)
-                fr_right = FreeRect(w, 0, w_left, coil_w)
+                fr_top = FreeRect(0, h, w, h_left); fr_right = FreeRect(w, 0, w_left, coil_w)
             else:
-                fr_top = FreeRect(0, h, actual_max_l, h_left)
-                fr_right = FreeRect(w, 0, w_left, h)
+                fr_top = FreeRect(0, h, actual_max_l, h_left); fr_right = FreeRect(w, 0, w_left, h)
                 
             if fr_top.w > 0 and fr_top.h > 0: new_bin['free_rects'].append(fr_top)
             if fr_right.w > 0 and fr_right.h > 0: new_bin['free_rects'].append(fr_right)
             bins.append(new_bin)
             
+    for b in bins:
+        b['odvinuto_mm'] = max([0] + [p['x'] + p['draw_w'] for p in b['placed']])
     return bins
 
+# --- SPRAVEDLIVÝ SOUBOJ ALGORITMŮ ---
 def pack_optimal_multibin(items, coil_w, max_l, allow_rotation=True):
     best_bins = None
     best_len = float('inf')
     
-    # 1. Základní chytré řazení
+    # Kolo 1: Zkusit Pruhový systém (Často vyhrává pro stejné díly = 8 metrů)
+    try:
+        bins_strips = pack_tinsmith_strips(items, coil_w, max_l, allow_rotation)
+        len_strips = sum(b['odvinuto_mm'] for b in bins_strips)
+        if len_strips < best_len:
+            best_len = len_strips
+            best_bins = bins_strips
+    except Exception:
+        pass
+
+    # Kolo 2: Gilotinové řazení
     sort_keys = [
         lambda x: (x['L'] * x['rš'], max(x['L'], x['rš'])),
         lambda x: (x['L'], x['rš']),
         lambda x: (x['rš'], x['L'])
     ]
-    
     for key in sort_keys:
         test_items = copy.deepcopy(items)
         test_items.sort(key=key, reverse=True)
-        bins = pack_guillotine_single(test_items, coil_w, max_l, allow_rotation)
-        total_len = sum(max([0] + [p['x'] + p['draw_w'] for p in b['placed']]) for b in bins)
-        if total_len < best_len:
-            best_len = total_len
-            best_bins = bins
+        bins_g = pack_guillotine_single(test_items, coil_w, max_l, allow_rotation)
+        len_g = sum(b['odvinuto_mm'] for b in bins_g)
+        if len_g < best_len:
+            best_len = len_g
+            best_bins = bins_g
             
-    # 2. Monte Carlo Simulace (AI zkusí 100 náhodných mixů k zaplnění děr)
-    for _ in range(100):
+    # Kolo 3: Gilotinová Monte Carlo Simulace (Náhodné zaplňování)
+    for _ in range(50):
         test_items = copy.deepcopy(items)
         random.shuffle(test_items)
-        bins = pack_guillotine_single(test_items, coil_w, max_l, allow_rotation)
-        total_len = sum(max([0] + [p['x'] + p['draw_w'] for p in b['placed']]) for b in bins)
-        if total_len < best_len:
-            best_len = total_len
-            best_bins = bins
+        bins_g = pack_guillotine_single(test_items, coil_w, max_l, allow_rotation)
+        len_g = sum(b['odvinuto_mm'] for b in bins_g)
+        if len_g < best_len:
+            best_len = len_g
+            best_bins = bins_g
             
     return best_bins
 
@@ -283,8 +327,8 @@ with tab_kalk:
             
             st.session_state.zakazka = edited_zakazka_df.to_dict('records')
             
-            if st.button("🚀 SPOČÍTAT ZAKÁZKU", type="primary", use_container_width=True):
-                with st.spinner("🧠 AI zkouší víc než 100 kombinací pro co nejlepší rozřezání..."):
+            if st.button("🚀 SPOČÍTAT S VYUŽITÍM AI", type="primary", use_container_width=True):
+                with st.spinner("🧠 AI testuje různé algoritmy pro nalezení absolutního minima materiálu..."):
                     fyzicke_kusy = {}
                     cena_prace = 0
                     conf = st.session_state.config
@@ -330,8 +374,7 @@ with tab_kalk:
                             vysledky_packing[mat_name] = bins
                             
                             for b in bins:
-                                max_x = max([p['x'] + p['draw_w'] for p in b['placed']])
-                                b['odvinuto_mm'] = max_x
+                                max_x = b['odvinuto_mm']
                                 odvinuto_m = max_x / 1000
                                 plocha_m2 = odvinuto_m * (w_coil / 1000)
                                 cena_za_svitek = plocha_m2 * cena_m2
