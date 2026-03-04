@@ -9,10 +9,11 @@ import matplotlib.patches as patches
 
 # --- NASTAVENÍ STRÁNKY ---
 st.set_page_config(page_title="Stavinvest Konfigurátor", page_icon="✂️", layout="wide")
-st.title("✂️ Stavinvest Konfigurátor vč. AI Simulačního Tetrisu")
+st.title("✂️ Stavinvest Konfigurátor (Gilotinová AI pro klempíře)")
 
 # ==========================================
-# EXTRÉMNÍ 2D TETRIS (MAXRECTS + MONTE CARLO SIMULACE)
+# GILOTINOVÝ TETRIS + MONTE CARLO SIMULACE
+# Vytváří pouze rovné řezy (snadné pro dílnu), ale minimalizuje odpad!
 # ==========================================
 class FreeRect:
     def __init__(self, x, y, w, h):
@@ -20,110 +21,110 @@ class FreeRect:
         self.y = y
         self.w = w
         self.h = h
-        
-    def contains(self, o):
-        return (self.x <= o.x and self.y <= o.y and 
-                self.x + self.w >= o.x + o.w and self.y + self.h >= o.y + o.h)
-        
-    def intersects(self, o):
-        return not (self.x >= o.x + o.w or self.x + self.w <= o.x or 
-                    self.y >= o.y + o.h or self.y + self.h <= o.y)
 
-def pack_maxrects_single(items, coil_w, max_l, allow_rotation):
+def pack_guillotine_single(items, coil_w, max_l, allow_rotation):
     bins = []
     
     for item in items:
         best_bin_idx = -1
-        best_node = None
-        best_rotated = False
-        
-        # Hodnotíme: Minimální prodloužení svitku (X), pak doraz doleva (X), pak dolů (Y)
+        best_fr_idx = -1
         best_score = (float('inf'), float('inf'), float('inf'))
+        best_rotated = False
         
         for b_idx, b in enumerate(bins):
             current_max_x = max([0] + [p['x'] + p['draw_w'] for p in b['placed']])
-            for fr in b['free_rects']:
-                
+            
+            for i, fr in enumerate(b['free_rects']):
                 # 1. Zkouška BEZ rotace
                 if fr.w >= item['L'] and fr.h >= item['rš']:
                     w, h = item['L'], item['rš']
                     new_max_x = max(current_max_x, fr.x + w)
-                    score = (new_max_x, fr.x, fr.y)
+                    score = (new_max_x, min(fr.w - w, fr.h - h), fr.y)
                     if score < best_score:
                         best_score = score
-                        best_bin_idx, best_rotated, best_node = b_idx, False, fr
-                        
+                        best_bin_idx = b_idx
+                        best_fr_idx = i
+                        best_rotated = False
+                
                 # 2. Zkouška S rotací o 90°
                 if allow_rotation and fr.w >= item['rš'] and fr.h >= item['L']:
                     w, h = item['rš'], item['L']
                     new_max_x = max(current_max_x, fr.x + w)
-                    score = (new_max_x, fr.x, fr.y)
+                    score = (new_max_x, min(fr.w - w, fr.h - h), fr.y)
                     if score < best_score:
                         best_score = score
-                        best_bin_idx, best_rotated, best_node = b_idx, True, fr
+                        best_bin_idx = b_idx
+                        best_fr_idx = i
+                        best_rotated = True
                         
-        if best_bin_idx == -1:
+        if best_bin_idx != -1:
+            b = bins[best_bin_idx]
+            best_fr = b['free_rects'][best_fr_idx]
+            
+            w = item['rš'] if best_rotated else item['L']
+            h = item['L'] if best_rotated else item['rš']
+            
+            item['rotated'] = best_rotated
+            item['x'] = best_fr.x
+            item['y'] = best_fr.y
+            item['draw_w'] = w
+            item['draw_h'] = h
+            b['placed'].append(item)
+            
+            # Gilotinový řez - zachování největší čisté plochy
+            w_left = best_fr.w - w
+            h_left = best_fr.h - h
+            
+            if (w * h_left) > (w_left * h):
+                fr_top = FreeRect(best_fr.x, best_fr.y + h, w, h_left)
+                fr_right = FreeRect(best_fr.x + w, best_fr.y, w_left, best_fr.h)
+            else:
+                fr_top = FreeRect(best_fr.x, best_fr.y + h, best_fr.w, h_left)
+                fr_right = FreeRect(best_fr.x + w, best_fr.y, w_left, h)
+                
+            b['free_rects'].pop(best_fr_idx)
+            if fr_top.w > 0 and fr_top.h > 0: b['free_rects'].append(fr_top)
+            if fr_right.w > 0 and fr_right.h > 0: b['free_rects'].append(fr_right)
+            
+        else:
             will_rotate = False
             if allow_rotation and coil_w >= item['L'] and item['rš'] <= max_l:
-                if item['rš'] < item['L']: 
-                    will_rotate = True
-            
+                if item['rš'] < item['L']: will_rotate = True
+                    
             w = item['rš'] if will_rotate else item['L']
             h = item['L'] if will_rotate else item['rš']
+            
             actual_max_l = max(max_l, w)
+            new_bin = {'free_rects': [], 'placed': [], 'w_coil': coil_w, 'max_l': actual_max_l}
             
-            new_bin = {'free_rects': [FreeRect(0, 0, actual_max_l, coil_w)], 'placed': [], 'w_coil': coil_w, 'max_l': actual_max_l}
-            bins.append(new_bin)
-            best_bin_idx = len(bins) - 1
-            best_node = new_bin['free_rects'][0]
-            best_rotated = will_rotate
+            item['x'] = 0
+            item['y'] = 0
+            item['rotated'] = will_rotate
+            item['draw_w'] = w
+            item['draw_h'] = h
+            new_bin['placed'].append(item)
             
-        w = item['rš'] if best_rotated else item['L']
-        h = item['L'] if best_rotated else item['rš']
-        item['rotated'] = best_rotated
-        item['x'], item['y'] = best_node.x, best_node.y
-        item['draw_w'], item['draw_h'] = w, h
-        
-        target_bin = bins[best_bin_idx]
-        target_bin['placed'].append(item)
-        placed_rect = FreeRect(item['x'], item['y'], w, h)
-        
-        new_free_rects = []
-        for fr in target_bin['free_rects']:
-            if fr.intersects(placed_rect):
-                if placed_rect.y + placed_rect.h < fr.y + fr.h:
-                    new_free_rects.append(FreeRect(fr.x, placed_rect.y + placed_rect.h, fr.w, fr.y + fr.h - (placed_rect.y + placed_rect.h)))
-                if placed_rect.y > fr.y:
-                    new_free_rects.append(FreeRect(fr.x, fr.y, fr.w, placed_rect.y - fr.y))
-                if placed_rect.x > fr.x:
-                    new_free_rects.append(FreeRect(fr.x, fr.y, placed_rect.x - fr.x, fr.h))
-                if placed_rect.x + placed_rect.w < fr.x + fr.w:
-                    new_free_rects.append(FreeRect(placed_rect.x + placed_rect.w, fr.y, fr.x + fr.w - (placed_rect.x + placed_rect.w), fr.h))
+            w_left = actual_max_l - w
+            h_left = coil_w - h
+            
+            if (w * h_left) > (w_left * h):
+                fr_top = FreeRect(0, h, w, h_left)
+                fr_right = FreeRect(w, 0, w_left, coil_w)
             else:
-                new_free_rects.append(fr)
+                fr_top = FreeRect(0, h, actual_max_l, h_left)
+                fr_right = FreeRect(w, 0, w_left, h)
                 
-        filtered_free_rects = []
-        for i, fr1 in enumerate(new_free_rects):
-            contained = False
-            for j in range(len(new_free_rects)):
-                if i == j: continue
-                fr2 = new_free_rects[j]
-                if fr2.contains(fr1):
-                    if fr2.x == fr1.x and fr2.y == fr1.y and fr2.w == fr1.w and fr2.h == fr1.h:
-                        if j < i: contained = True; break
-                    else:
-                        contained = True; break
-            if not contained:
-                filtered_free_rects.append(fr1)
-        target_bin['free_rects'] = filtered_free_rects
-        
+            if fr_top.w > 0 and fr_top.h > 0: new_bin['free_rects'].append(fr_top)
+            if fr_right.w > 0 and fr_right.h > 0: new_bin['free_rects'].append(fr_right)
+            bins.append(new_bin)
+            
     return bins
 
 def pack_optimal_multibin(items, coil_w, max_l, allow_rotation=True):
     best_bins = None
     best_len = float('inf')
     
-    # 1. Klasické způsoby řazení (Plocha, Délka, Šířka)
+    # 1. Základní chytré řazení
     sort_keys = [
         lambda x: (x['L'] * x['rš'], max(x['L'], x['rš'])),
         lambda x: (x['L'], x['rš']),
@@ -133,17 +134,17 @@ def pack_optimal_multibin(items, coil_w, max_l, allow_rotation=True):
     for key in sort_keys:
         test_items = copy.deepcopy(items)
         test_items.sort(key=key, reverse=True)
-        bins = pack_maxrects_single(test_items, coil_w, max_l, allow_rotation)
+        bins = pack_guillotine_single(test_items, coil_w, max_l, allow_rotation)
         total_len = sum(max([0] + [p['x'] + p['draw_w'] for p in b['placed']]) for b in bins)
         if total_len < best_len:
             best_len = total_len
             best_bins = bins
             
-    # 2. Monte Carlo Simulace: Umělá inteligence zkusí 100 náhodných kombinací (aby našla ideální shluk šířek)
+    # 2. Monte Carlo Simulace (AI zkusí 100 náhodných mixů k zaplnění děr)
     for _ in range(100):
         test_items = copy.deepcopy(items)
         random.shuffle(test_items)
-        bins = pack_maxrects_single(test_items, coil_w, max_l, allow_rotation)
+        bins = pack_guillotine_single(test_items, coil_w, max_l, allow_rotation)
         total_len = sum(max([0] + [p['x'] + p['draw_w'] for p in b['placed']]) for b in bins)
         if total_len < best_len:
             best_len = total_len
@@ -230,7 +231,7 @@ with tab_nastaveni:
         st.session_state.config["presah"] = st.number_input("Přesah spojů (mm)", value=int(st.session_state.config["presah"]))
     with c2:
         st.session_state.config["max_delka"] = st.number_input("Délka ohýbačky (mm)", value=int(st.session_state.config["max_delka"]))
-        st.session_state.config["povolit_rotaci"] = st.checkbox("🔄 Povolit otáčení dílů o 90°", value=st.session_state.config["povolit_rotaci"])
+        st.session_state.config["povolit_rotaci"] = st.checkbox("🔄 Povolit otáčení dílů o 90° (Výrazná úspora materiálu)", value=st.session_state.config["povolit_rotaci"])
 
 # ==========================================
 # ZÁLOŽKA: DATA
@@ -282,8 +283,8 @@ with tab_kalk:
             
             st.session_state.zakazka = edited_zakazka_df.to_dict('records')
             
-            if st.button("🚀 SPOČÍTAT 2D TETRIS", type="primary", use_container_width=True):
-                with st.spinner("🧠 AI zkouší 100 různých způsobů skládání k nalezení minima prořezu..."):
+            if st.button("🚀 SPOČÍTAT ZAKÁZKU", type="primary", use_container_width=True):
+                with st.spinner("🧠 AI zkouší víc než 100 kombinací pro co nejlepší rozřezání..."):
                     fyzicke_kusy = {}
                     cena_prace = 0
                     conf = st.session_state.config
