@@ -10,224 +10,126 @@ import matplotlib.patches as patches
 
 # --- NASTAVENÍ STRÁNKY ---
 st.set_page_config(page_title="Stavinvest Konfigurátor", page_icon="✂️", layout="wide")
-st.title("✂️ Stavinvest Konfigurátor vč. Super-Algoritmu (Skupiny + Zbytky)")
+st.title("✂️ Stavinvest Konfigurátor (Modulový Výpočet pro 4m Stroje)")
 
 # ==========================================
-# SUPER-ALGORITMUS (MAXRECTS + PRUHY + SKUPINY VÝROBKŮ)
-# Zaručuje absolutní minimum odvinutého materiálu
+# MODULOVÝ PRUHOVÝ ALGORITMUS (PRO PRŮBĚŽNÉ ŘEZY)
+# Striktně dělí svitek na moduly (max 4m) a v nich na průběžné podélné pruhy.
+# Zamezuje "cik-cak" řezům.
 # ==========================================
-class FreeRect:
-    def __init__(self, x, y, w, h):
-        self.x = x; self.y = y; self.w = w; self.h = h
-        
-    def contains(self, o):
-        return (self.x <= o.x and self.y <= o.y and 
-                self.x + self.w >= o.x + o.w and self.y + self.h >= o.y + o.h)
-        
-    def intersects(self, o):
-        return not (self.x >= o.x + o.w or self.x + self.w <= o.x or 
-                    self.y >= o.y + o.h or self.y + self.h <= o.y)
-
-def pack_maxrects_single(items, coil_w, max_l, allow_rotation, heur):
-    bins = []
-    for item in items:
-        best_bin_idx = -1
-        best_node = None
-        best_rotated = False
-        best_score = (float('inf'), float('inf'), float('inf'))
-        
-        for b_idx, b in enumerate(bins):
-            current_max_x = max([0] + [p['x'] + p['draw_w'] for p in b['placed']])
-            for fr in b['free_rects']:
-                # BEZ ROTACE
-                if fr.w >= item['L'] and fr.h >= item['rš']:
-                    w, h = item['L'], item['rš']
-                    new_max = max(current_max_x, fr.x + w)
-                    if heur == 'LB': score = (new_max, fr.x, fr.y)
-                    else: score = (new_max, min(fr.w - w, fr.h - h), fr.y)
-                    
-                    if score < best_score:
-                        best_score = score
-                        best_bin_idx, best_rotated, best_node = b_idx, False, fr
-                        
-                # S ROTACÍ
-                if allow_rotation and fr.w >= item['rš'] and fr.h >= item['L']:
-                    w, h = item['rš'], item['L']
-                    new_max = max(current_max_x, fr.x + w)
-                    if heur == 'LB': score = (new_max, fr.x, fr.y)
-                    else: score = (new_max, min(fr.w - w, fr.h - h), fr.y)
-                    
-                    if score < best_score:
-                        best_score = score
-                        best_bin_idx, best_rotated, best_node = b_idx, True, fr
-                        
-        if best_bin_idx == -1:
-            will_rotate = False
-            if allow_rotation and coil_w >= item['L'] and item['rš'] <= max_l:
-                if item['rš'] < item['L']: will_rotate = True
-            
-            w = item['rš'] if will_rotate else item['L']
-            h = item['L'] if will_rotate else item['rš']
-            actual_max_l = max(max_l, w)
-            
-            new_bin = {'free_rects': [FreeRect(0, 0, actual_max_l, coil_w)], 'placed': [], 'w_coil': coil_w, 'max_l': actual_max_l}
-            bins.append(new_bin)
-            best_bin_idx = len(bins) - 1
-            best_node = new_bin['free_rects'][0]
-            best_rotated = will_rotate
-            
-        w = item['rš'] if best_rotated else item['L']
-        h = item['L'] if best_rotated else item['rš']
-        item['rotated'] = best_rotated
-        item['x'], item['y'] = best_node.x, best_node.y
-        item['draw_w'], item['draw_h'] = w, h
-        
-        target_bin = bins[best_bin_idx]
-        target_bin['placed'].append(item)
-        placed_rect = FreeRect(item['x'], item['y'], w, h)
-        
-        new_free_rects = []
-        for fr in target_bin['free_rects']:
-            if fr.intersects(placed_rect):
-                if placed_rect.y + placed_rect.h < fr.y + fr.h:
-                    new_free_rects.append(FreeRect(fr.x, placed_rect.y + placed_rect.h, fr.w, fr.y + fr.h - (placed_rect.y + placed_rect.h)))
-                if placed_rect.y > fr.y:
-                    new_free_rects.append(FreeRect(fr.x, fr.y, fr.w, placed_rect.y - fr.y))
-                if placed_rect.x > fr.x:
-                    new_free_rects.append(FreeRect(fr.x, fr.y, placed_rect.x - fr.x, fr.h))
-                if placed_rect.x + placed_rect.w < fr.x + fr.w:
-                    new_free_rects.append(FreeRect(placed_rect.x + placed_rect.w, fr.y, fr.x + fr.w - (placed_rect.x + placed_rect.w), fr.h))
-            else:
-                new_free_rects.append(fr)
-                
-        filtered_free_rects = []
-        for i, fr1 in enumerate(new_free_rects):
-            contained = False
-            for j in range(len(new_free_rects)):
-                if i == j: continue
-                fr2 = new_free_rects[j]
-                if fr2.contains(fr1):
-                    if fr2.x == fr1.x and fr2.y == fr1.y and fr2.w == fr1.w and fr2.h == fr1.h:
-                        if j < i: contained = True; break
-                    else:
-                        contained = True; break
-            if not contained:
-                filtered_free_rects.append(fr1)
-        target_bin['free_rects'] = filtered_free_rects
-        
-    for b in bins:
-        b['odvinuto_mm'] = max([0] + [p['x'] + p['draw_w'] for p in b['placed']])
-        
-    return bins
-
-def pack_tinsmith_strips(items, coil_w, max_l, allow_rotation):
-    test_items = copy.deepcopy(items)
-    test_items.sort(key=lambda x: (x['rš'], x['L']), reverse=True)
-    bins = []
-    for item in test_items:
-        best_bin = None; best_strip = None; best_score = float('inf'); best_rotated = False
-        orientations = [(item['L'], item['rš'], False)]
-        if allow_rotation and item['L'] != item['rš']: orientations.append((item['rš'], item['L'], True))
-            
-        for b in bins:
-            bin_max_x = max([s['current_x'] for s in b['strips']] + [0])
-            for w, h, rotated in orientations:
-                for s in b['strips']:
-                    if s['rs'] >= h:
-                        new_strip_x = s['current_x'] + w
-                        if new_strip_x <= max_l:
-                            new_bin_max_x = max(bin_max_x, new_strip_x)
-                            score = new_bin_max_x * 10000 + (s['rs'] - h)
-                            if score < best_score:
-                                best_score = score; best_bin = b; best_strip = s; best_rotated = rotated
-                current_y = sum(s['rs'] for s in b['strips'])
-                if current_y + h <= coil_w and w <= max_l:
-                    new_bin_max_x = max(bin_max_x, w)
-                    score = new_bin_max_x * 10000 + 1
-                    if score < best_score:
-                        best_score = score; best_bin = b; best_strip = "NEW"; best_rotated = rotated
-                        
-        w, h, rotated = (item['rš'], item['L'], True) if best_rotated else (item['L'], item['rš'], False)
-        item['rotated'] = rotated
-        item['draw_w'] = w; item['draw_h'] = h
-        
-        if best_bin is not None:
-            if best_strip == "NEW":
-                current_y = sum(s['rs'] for s in best_bin['strips'])
-                new_s = {'rs': h, 'y': current_y, 'current_x': w, 'items': [item]}
-                item['x'] = 0; item['y'] = current_y
-                best_bin['strips'].append(new_s)
-            else:
-                item['x'] = best_strip['current_x']; item['y'] = best_strip['y']
-                best_strip['current_x'] += w
-                best_strip['items'].append(item)
-        else:
-            item['x'] = 0; item['y'] = 0
-            new_s = {'rs': h, 'y': 0, 'current_x': w, 'items': [item]}
-            bins.append({'w_coil': coil_w, 'strips': [new_s], 'max_l': max_l})
-            
-    formatted_bins = []
-    for b in bins:
-        placed = []
-        for s in b['strips']: placed.extend(s['items'])
-        max_x = max([s['current_x'] for s in b['strips']] + [0])
-        formatted_bins.append({'w_coil': b['w_coil'], 'odvinuto_mm': max_x, 'placed': placed})
-    return formatted_bins
-
-def pack_optimal_multibin(items, coil_w, max_l, allow_rotation=True):
-    best_bins = None
+def pack_module_strips(items, coil_w, max_l, allow_rotation=True):
+    best_modules = None
     best_len = float('inf')
     
-    # 1. Sesypání stejných výrobků k sobě (dle Vašeho požadavku)
-    groups = defaultdict(list)
-    for item in items:
-        groups[(item['L'], item['rš'])].append(item)
-    group_lists = list(groups.values())
-    
-    orders = []
-    # Čistě podle plochy
-    orders.append(sorted(items, key=lambda x: x['L']*x['rš'], reverse=True))
-    
-    # Skupiny při sobě (velké bloky jako první) -> TOHLE JE TA MAGIE PRO ZBYTKY!
-    groups_by_area = sorted(group_lists, key=lambda g: g[0]['L']*g[0]['rš']*len(g), reverse=True)
-    orders.append([item for g in groups_by_area for item in g])
-    
-    groups_by_piece = sorted(group_lists, key=lambda g: g[0]['L']*g[0]['rš'], reverse=True)
-    orders.append([item for g in groups_by_piece for item in g])
-    
-    # AI náhodné míchání bloků
-    for _ in range(40):
-        shuf_g = copy.copy(group_lists)
-        random.shuffle(shuf_g)
-        orders.append([item for g in shuf_g for item in g])
+    # Simulační smyčka: Zkoušíme 200 různých kombinací sestavení
+    for iteration in range(200):
+        test_items = copy.deepcopy(items)
         
-    for _ in range(20):
-        shuf_i = copy.copy(items)
-        random.shuffle(shuf_i)
-        orders.append(shuf_i)
-        
-    heuristics = ['LB', 'BSSF']
-    
-    for order in orders:
-        for heur in heuristics:
-            test_items = copy.deepcopy(order)
-            bins = pack_maxrects_single(test_items, coil_w, max_l, allow_rotation, heur)
-            tot_len = sum(b['odvinuto_mm'] for b in bins)
-            if tot_len < best_len:
-                best_len = tot_len
-                best_bins = bins
+        # 1. Zvolení strategie řazení a rotace
+        if iteration == 0:
+            test_items.sort(key=lambda x: x['L'], reverse=True)
+        elif iteration == 1:
+            test_items.sort(key=lambda x: x['rš'], reverse=True)
+        else:
+            random.shuffle(test_items)
+            
+        for it in test_items:
+            can_std = (it['L'] <= max_l and it['rš'] <= coil_w)
+            can_rot = (allow_rotation and it['rš'] <= max_l and it['L'] <= coil_w)
+            
+            if iteration < 2:
+                # Klasicky bez rotace, pokud to jde
+                if can_std:
+                    it['dx'], it['dy'], it['rotated'] = it['L'], it['rš'], False
+                elif can_rot:
+                    it['dx'], it['dy'], it['rotated'] = it['rš'], it['L'], True
+                else:
+                    it['dx'], it['dy'], it['rotated'] = it['L'], it['rš'], False 
+            else:
+                # Náhodné otáčení pro otestování lepších kombinací
+                if can_std and can_rot:
+                    if random.random() > 0.5:
+                        it['dx'], it['dy'], it['rotated'] = it['rš'], it['L'], True
+                    else:
+                        it['dx'], it['dy'], it['rotated'] = it['L'], it['rš'], False
+                elif can_rot:
+                    it['dx'], it['dy'], it['rotated'] = it['rš'], it['L'], True
+                else:
+                    it['dx'], it['dy'], it['rotated'] = it['L'], it['rš'], False
+
+        # 2. Seskupení prvků podle stejné šířky (dy) - zamezení cik-cak řezům
+        groups = defaultdict(list)
+        for it in test_items:
+            groups[it['dy']].append(it)
+            
+        strips = []
+        for dy, group_items in groups.items():
+            if iteration % 2 == 0:
+                group_items.sort(key=lambda x: x['dx'], reverse=True)
+            else:
+                random.shuffle(group_items)
                 
-    # 2. Záloha: Test pruhového systému
-    try:
-        bins_strip = pack_tinsmith_strips(copy.deepcopy(items), coil_w, max_l, allow_rotation)
-        tot_len_strip = sum(b['odvinuto_mm'] for b in bins_strip)
-        if tot_len_strip < best_len:
-            best_len = tot_len_strip
-            best_bins = bins_strip
-    except Exception:
-        pass
+            current_strips = []
+            for it in group_items:
+                placed = False
+                for s in current_strips:
+                    if s['l'] + it['dx'] <= max_l:  # max_l je typicky 4000 mm
+                        it['x'] = s['l']
+                        s['items'].append(it)
+                        s['l'] += it['dx']
+                        placed = True
+                        break
+                if not placed:
+                    it['x'] = 0
+                    current_strips.append({'w': dy, 'l': it['dx'], 'items': [it]})
+            strips.extend(current_strips)
+            
+        # 3. Skládání podélných pruhů do Modulů
+        # Pruhy skládáme od nejdelšího, abychom zbytečně neprodlužovali moduly
+        strips.sort(key=lambda s: s['l'], reverse=True)
+        modules = []
         
-    return best_bins
+        for s in strips:
+            placed = False
+            for m in modules:
+                if m['used_w'] + s['w'] <= coil_w:
+                    s['y'] = m['used_w']
+                    for it in s['items']:
+                        it['y'] = s['y']
+                    m['strips'].append(s)
+                    m['used_w'] += s['w']
+                    m['l'] = max(m['l'], s['l']) # Délka modulu je dána nejdelším pruhem
+                    placed = True
+                    break
+            if not placed:
+                s['y'] = 0
+                for it in s['items']:
+                    it['y'] = 0
+                modules.append({'used_w': s['w'], 'l': s['l'], 'strips': [s]})
+                
+        # Vyhodnocení celkové délky všech modulů
+        tot_len = sum(m['l'] for m in modules)
+        if tot_len < best_len:
+            best_len = tot_len
+            best_modules = modules
+
+    # 4. Formátování výsledku pro vykreslení
+    formatted_bins = []
+    if best_modules:
+        for m in best_modules:
+            placed = []
+            for s in m['strips']:
+                for it in s['items']:
+                    it['draw_w'] = it['dx']
+                    it['draw_h'] = it['dy']
+                    placed.append(it)
+            formatted_bins.append({
+                'w_coil': coil_w,
+                'odvinuto_mm': m['l'],
+                'placed': placed
+            })
+            
+    return formatted_bins
 
 # --- INICIALIZACE NASTAVENÍ ---
 if 'config' not in st.session_state:
@@ -360,8 +262,8 @@ with tab_kalk:
             
             st.session_state.zakazka = edited_zakazka_df.to_dict('records')
             
-            if st.button("🚀 SPOČÍTAT S VYUŽITÍM AI", type="primary", use_container_width=True):
-                with st.spinner("🧠 AI kombinuje bloky a zbytky... Testuje 150+ variant! Může to trvat 2 vteřiny."):
+            if st.button("🚀 SPOČÍTAT (Modulový systém)", type="primary", use_container_width=True):
+                with st.spinner("🧠 AI skládá bloky pro průběžné podélné řezání..."):
                     fyzicke_kusy = {}
                     cena_prace = 0
                     conf = st.session_state.config
@@ -371,6 +273,7 @@ with tab_kalk:
                         p_data = prv_dict[p["Prvek"]]
                         L_mm = p["Metrů"] * 1000
                         
+                        # Rozdělí díly přesahující 4 metry na menší kousky
                         seg = 1 if L_mm <= conf["max_delka"] else math.ceil((L_mm - conf["presah"]) / (conf["max_delka"] - conf["presah"]))
                         L_seg = (L_mm + (seg - 1) * conf["presah"]) / seg
                         
@@ -398,9 +301,11 @@ with tab_kalk:
                     for mat_name, items in fyzicke_kusy.items():
                         w_coil = mat_dict[mat_name]["Šířka (mm)"]
                         cena_m2 = mat_dict[mat_name]["Cena/m2"]
-                        max_tab_len = mat_dict[mat_name]["Max délka tabule (mm)"]
                         
-                        bins = pack_optimal_multibin(items, w_coil, max_tab_len, conf["povolit_rotaci"])
+                        # max_tab_len zohledňuje nastavení délky stroje, aby moduly nebyly delší
+                        max_tab_len = min(mat_dict[mat_name]["Max délka tabule (mm)"], conf["max_delka"])
+                        
+                        bins = pack_module_strips(items, w_coil, max_tab_len, conf["povolit_rotaci"])
                         
                         if bins:
                             tot_odvinuto = 0; tot_plocha = 0; tot_cena = 0
@@ -418,7 +323,7 @@ with tab_kalk:
                                 
                             c_mat += tot_cena
                             sumar[mat_name] = {
-                                "Pásů/Tabulí (ks)": len(bins), 
+                                "Počet 4m Modulů (ks)": len(bins), 
                                 "Celkem odvinout (m)": tot_odvinuto, 
                                 "Plocha (m2)": tot_plocha, 
                                 "Cena": tot_cena
@@ -448,7 +353,7 @@ with tab_kalk:
 # ZÁLOŽKA: NÁKRES
 # ==========================================
 with tab_nakres:
-    st.header("📐 Schéma řezů na svitku")
+    st.header("📐 Schéma Modulů (pro průběžné řezy na 4m stroji)")
     if 'vysledky_packing' in st.session_state and st.session_state.vysledky_packing:
         barvy = ['#3498db', '#e74c3c', '#2ecc71', '#f1c40f', '#9b59b6', '#e67e22', '#1abc9c', '#34495e', '#16a085', '#27ae60', '#8e44ad', '#f39c12', '#d35400', '#c0392b']
         
@@ -459,9 +364,10 @@ with tab_nakres:
                 odvinuto_mm = b['odvinuto_mm']
                 w_coil = b['w_coil']
                 
-                st.write(f"**Svitek {i+1}:** Odstřihnout/Odvinout **{odvinuto_mm / 1000:.2f} m** (Šířka svitku: {w_coil} mm, Účtovaná plocha: **{(odvinuto_mm/1000)*(w_coil/1000):.2f} m2**)")
+                st.write(f"**Modul {i+1}:** Odvinout/Ustřihnout napříč na **{odvinuto_mm / 1000:.2f} m** (Šířka svitku: {w_coil} mm)")
                 
                 fig, ax = plt.subplots(figsize=(12, 2.5))
+                # Hlavní obrys Modulu
                 ax.add_patch(patches.Rectangle((0, 0), odvinuto_mm, w_coil, fill=False, edgecolor='black', linewidth=2))
                 
                 unikatni_prvky = list(set([p['Prvek'] for p in b['placed']]))
@@ -476,7 +382,7 @@ with tab_nakres:
                 
                 ax.set_xlim(0, max(odvinuto_mm * 1.02, 100))
                 ax.set_ylim(0, w_coil * 1.05)
-                ax.set_xlabel("Délka odvinutého plechu (mm)")
+                ax.set_xlabel("Délka modulu (mm)")
                 ax.set_ylabel("Šířka svitku (mm)")
                 st.pyplot(fig)
             st.divider()
