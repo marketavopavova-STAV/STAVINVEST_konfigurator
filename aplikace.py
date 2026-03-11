@@ -8,8 +8,9 @@ from collections import defaultdict
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 
-# Pro vkládání obrázků do Excelu
+# Pro vkládání obrázků a formátování do Excelu
 from openpyxl.drawing.image import Image as xlImage
+from openpyxl.utils import get_column_letter
 
 # --- NASTAVENÍ STRÁNKY ---
 st.set_page_config(page_title="Stavinvest Konfigurátor", page_icon="✂️", layout="wide")
@@ -124,20 +125,52 @@ if 'materialy_df' not in st.session_state:
     st.session_state.materialy_df = pd.DataFrame([
         {"Materiál": "FeZn svitek 0,55 mm", "Šířka (mm)": 1250, "Cena/m2": 200.0, "Max délka tabule (mm)": 50000},
         {"Materiál": "FeZn svitek lak PES 0,5 mm std barvy", "Šířka (mm)": 2000, "Cena/m2": 270.0, "Max délka tabule (mm)": 50000},
+        {"Materiál": "FeZn svitek lak PES 0,5 mm nestandard", "Šířka (mm)": 1000, "Cena/m2": 288.0, "Max délka tabule (mm)": 50000},
         {"Materiál": "Titanzinek 0,6 mm", "Šířka (mm)": 1500, "Cena/m2": 611.0, "Max délka tabule (mm)": 50000},
+        {"Materiál": "Titanzinek 0,7 mm", "Šířka (mm)": 1250, "Cena/m2": 714.0, "Max délka tabule (mm)": 50000},
+        {"Materiál": "Cu svitek 0,55 mm", "Šířka (mm)": 2000, "Cena/m2": 2119.0, "Max délka tabule (mm)": 50000},
+        {"Materiál": "Hliník 0,6 mm J+SF PES (MTC)", "Šířka (mm)": 1000, "Cena/m2": 400.0, "Max délka tabule (mm)": 50000},
+        {"Materiál": "Hliník 0,7 mm O+SF PES (MTC)", "Šířka (mm)": 1500, "Cena/m2": 530.0, "Max délka tabule (mm)": 50000},
         {"Materiál": "Comax FALC 0,7mm PES", "Šířka (mm)": 1750, "Cena/m2": 550.0, "Max délka tabule (mm)": 50000},
+        {"Materiál": "Comax FALC 0,7mm Cortex", "Šířka (mm)": 2500, "Cena/m2": 590.0, "Max délka tabule (mm)": 50000},
+        {"Materiál": "Prefa CLR", "Šířka (mm)": 1300, "Cena/m2": 457.0, "Max délka tabule (mm)": 50000},
+        {"Materiál": "PREFA Prefalz", "Šířka (mm)": 1700, "Cena/m2": 580.0, "Max délka tabule (mm)": 50000},
+        {"Materiál": "PVC ROOFPLAN 7035", "Šířka (mm)": 1800, "Cena/m2": 591.0, "Max délka tabule (mm)": 50000},
+        {"Materiál": "Bauder PVC svitek 7035", "Šířka (mm)": 2600, "Cena/m2": 840.0, "Max délka tabule (mm)": 50000},
         {"Materiál": "ATYP", "Šířka (mm)": 1250, "Cena/m2": 0.0, "Max délka tabule (mm)": 50000},
-        # (Vaše další materiály se načtou z historie, nebo je můžete doplnit z minulého kódu v záložce Data)
+        {"Materiál": "Výroba z materiálu zákazníka", "Šířka (mm)": 1250, "Cena/m2": 0.0, "Max délka tabule (mm)": 50000}
     ])
 
 if 'prvky_df' not in st.session_state:
     st.session_state.prvky_df = pd.DataFrame([
         {"Typ prvku": "závětrná lišta spodní r.š.250", "RŠ (mm)": 250, "Ohyby": 6},
+        {"Typ prvku": "závětrná lišta spodní r.š.330", "RŠ (mm)": 333, "Ohyby": 6},
+        {"Typ prvku": "závětrná lišta spodní r.š.410", "RŠ (mm)": 410, "Ohyby": 6},
         {"Typ prvku": "okapnice do r.š. 200", "RŠ (mm)": 200, "Ohyby": 2},
+        {"Typ prvku": "okapnice r.š.201-250", "RŠ (mm)": 250, "Ohyby": 2},
         {"Typ prvku": "okapnice r.š. 250 - 333", "RŠ (mm)": 333, "Ohyby": 2},
+        {"Typ prvku": "lemování ke zdi r.š.250", "RŠ (mm)": 250, "Ohyby": 3},
+        {"Typ prvku": "lemování ke zdi r.š.330", "RŠ (mm)": 333, "Ohyby": 6},
         {"Typ prvku": "úžlabí r.š.500", "RŠ (mm)": 500, "Ohyby": 3},
+        {"Typ prvku": "úžlabí rš 670", "RŠ (mm)": 670, "Ohyby": 3},
         {"Typ prvku": "úžlabí s drážkou rš. 500", "RŠ (mm)": 500, "Ohyby": 5},
-        # (Zbytek vašich prvků máte trvale uložený v záložce Data)
+        {"Typ prvku": "úžlabí s drážkou rš. 670", "RŠ (mm)": 670, "Ohyby": 5},
+        {"Typ prvku": "závětrná lišta pultová r.š.250", "RŠ (mm)": 250, "Ohyby": 6},
+        {"Typ prvku": "závětrná lišta pultová r.š.330", "RŠ (mm)": 333, "Ohyby": 6},
+        {"Typ prvku": "atikový plech do r.š. 500", "RŠ (mm)": 500, "Ohyby": 4},
+        {"Typ prvku": "L lišta", "RŠ (mm)": 100, "Ohyby": 2},
+        {"Typ prvku": "stěnová lišta", "RŠ (mm)": 100, "Ohyby": 2},
+        {"Typ prvku": "parapet do r.š. 250", "RŠ (mm)": 250, "Ohyby": 3},
+        {"Typ prvku": "parapet do r.š. 330", "RŠ (mm)": 333, "Ohyby": 3},
+        {"Typ prvku": "parapet do r.š. 500", "RŠ (mm)": 500, "Ohyby": 3},
+        {"Typ prvku": "parapet do r.š. 250 včetně boků", "RŠ (mm)": 250, "Ohyby": 3},
+        {"Typ prvku": "parapet do r.š. 330 včetně boků", "RŠ (mm)": 333, "Ohyby": 3},
+        {"Typ prvku": "parapet do r.š. 500 včetně boků", "RŠ (mm)": 500, "Ohyby": 3},
+        {"Typ prvku": "atypický výrobek rš 0 - 100", "RŠ (mm)": 100, "Ohyby": 9},
+        {"Typ prvku": "atypický výrobek rš 100 - 250", "RŠ (mm)": 250, "Ohyby": 9},
+        {"Typ prvku": "atypický výrobek rš 251 - 333", "RŠ (mm)": 333, "Ohyby": 9},
+        {"Typ prvku": "atypický výrobek rš 334 - 500", "RŠ (mm)": 500, "Ohyby": 9},
+        {"Typ prvku": "atypický výrobek rš 501 - 1250", "RŠ (mm)": 1250, "Ohyby": 9}
     ])
 
 if 'zakazka' not in st.session_state:
@@ -164,6 +197,7 @@ with tab_nastaveni:
 
 with tab_data:
     st.header("⚙️ Správa dat")
+    st.info("Základní maximální délka svitku/tabule je nyní nastavena na 50 metrů (50 000 mm).")
     st.session_state.materialy_df = st.data_editor(st.session_state.materialy_df, num_rows="dynamic", key="em", use_container_width=True)
     st.session_state.prvky_df = st.data_editor(st.session_state.prvky_df, num_rows="dynamic", key="ep", use_container_width=True)
 
@@ -177,13 +211,11 @@ with tab_kalk:
         v_odberatel = st.text_input("Odběratel / Název zakázky", st.session_state.get('odberatel', ''))
         st.session_state.odberatel = v_odberatel
         
-        # Materiál je teď globální pro celou zakázku!
         v_mat = st.selectbox("Materiál (pro celou zakázku)", list(mat_dict.keys()))
         
         st.header("2. Přidat položku")
         v_prvek = st.selectbox("Prvek", list(prv_dict.keys()))
         
-        # Automatické načtení ohybů s možností úpravy
         default_ohyby = int(prv_dict[v_prvek]["Ohyby"]) if v_prvek in prv_dict else 0
         v_ohyby = st.number_input("Počet ohybů (lze upravit)", value=default_ohyby, min_value=0)
         v_m = st.number_input("Délka (m)", value=2.5, step=0.1)
@@ -208,7 +240,6 @@ with tab_kalk:
         st.header("Výpočet a Optimalizace")
         if st.session_state.zakazka:
             df_zakazka = pd.DataFrame(st.session_state.zakazka)
-            # Přidání unikátního čísla řádku (ID) pro barvy
             df_zakazka.insert(0, 'Řádek', range(1, len(df_zakazka) + 1))
             
             edited_zakazka_df = st.data_editor(
@@ -226,7 +257,6 @@ with tab_kalk:
                 key="editor_zakazka"
             )
             
-            # Uložení změn zpět (odstraníme Řádek, vygeneruje se znovu)
             updated_zakazka = edited_zakazka_df.drop(columns=['Řádek']).to_dict('records')
             st.session_state.zakazka = updated_zakazka
             
@@ -237,7 +267,6 @@ with tab_kalk:
                     conf = st.session_state.config
                     m_data = mat_dict[v_mat]
                     
-                    # Každý kus dostane ID podle řádku ze specifikace
                     for idx, p in enumerate(st.session_state.zakazka):
                         row_id = idx + 1 
                         p_data = prv_dict[p["Prvek"]]
@@ -288,7 +317,6 @@ with tab_kalk:
                         st.session_state.cena_prace = cena_prace
                         st.session_state.c_mat = tot_cena_mat
                         
-                        # --- VYKRESLENÍ OBRÁZKŮ DO PAMĚTI (PRO UI I EXCEL) ---
                         figs = []
                         barvy = ['#3498db', '#e74c3c', '#2ecc71', '#f1c40f', '#9b59b6', '#e67e22', '#1abc9c', '#34495e', '#16a085', '#27ae60', '#8e44ad', '#f39c12', '#d35400', '#c0392b']
                         
@@ -298,14 +326,17 @@ with tab_kalk:
                             ax.add_patch(patches.Rectangle((0, 0), odvinuto_mm, w_coil, fill=False, edgecolor='black', linewidth=2))
                             
                             for p in b['placed']:
-                                color = barvy[(p['id'] - 1) % len(barvy)] # Barva podle čísla řádku
+                                color = barvy[(p['id'] - 1) % len(barvy)] 
                                 ax.add_patch(patches.Rectangle((p['x'], p['y']), p['draw_w'], p['draw_h'], facecolor=color, edgecolor='black', alpha=0.8))
                                 font_size = 8 if p['draw_w'] > 500 else 6
                                 rotace_text = " ↻" if p.get('rotated') else ""
                                 ax.text(p['x'] + p['draw_w']/2, p['y'] + p['draw_h']/2, f"Ř.{p['id']} {p['Prvek']}\n({p['L']:.0f}x{p['rš']}){rotace_text}", 
                                         ha='center', va='center', fontsize=font_size, color='white', weight='bold')
                             
-                            ax.set_xlim(0, max(odvinuto_mm * 1.02, 100))
+                            # KLÍČOVÁ OPRAVA: Pevné měřítko pro reálné zobrazení délek!
+                            osa_x_max = max(max_tab_len, 100) 
+                            ax.set_xlim(0, osa_x_max * 1.02)
+                            
                             ax.set_ylim(0, w_coil * 1.05)
                             ax.set_xlabel("Délka modulu (mm)")
                             ax.set_ylabel("Šířka svitku (mm)")
@@ -316,7 +347,6 @@ with tab_kalk:
                         st.session_state.calc_done = True
                         st.session_state.v_mat = v_mat
 
-            # ZOBRAZENÍ VÝSLEDKŮ A EXCEL EXPORT
             if st.session_state.get('calc_done', False):
                 st.divider()
                 st.subheader("Souhrnná kalkulace")
@@ -329,7 +359,7 @@ with tab_kalk:
                 r2.metric("Práce (Ohyby)", f"{cena_prace:,.2f} Kč")
                 r3.metric("CELKEM ZAKÁZKA (vč. DPH)", f"{(c_mat + cena_prace)*1.21:,.2f} Kč")
 
-                # EXPORT DO EXCELU VČETNĚ NÁKRESŮ
+                # EXPORT DO EXCELU (S AUTOMATICKOU ŠÍŘKOU SLOUPCŮ)
                 buf = io.BytesIO()
                 with pd.ExcelWriter(buf, engine='openpyxl') as wr:
                     info_df = pd.DataFrame([
@@ -344,9 +374,26 @@ with tab_kalk:
                     
                     pd.DataFrame.from_dict(st.session_state.sumar, orient='index').to_excel(wr, sheet_name='Souhrn_Materiálu')
                     
-                    # Generování obrázků do třetího listu
+                    # Formátování sloupců (Automatická šířka podle textu)
                     wb = wr.book
+                    for sheet_name in ['Zadání', 'Souhrn_Materiálu']:
+                        ws = wr.sheets[sheet_name]
+                        for col in ws.columns:
+                            max_length = 0
+                            column_letter = col[0].column_letter
+                            for cell in col:
+                                try:
+                                    if cell.value:
+                                        max_length = max(max_length, len(str(cell.value)))
+                                except:
+                                    pass
+                            adjusted_width = (max_length + 2)
+                            ws.column_dimensions[column_letter].width = adjusted_width
+                    
+                    # Generování obrázků do třetího listu
                     ws_img = wb.create_sheet('Výrobní nákresy')
+                    ws_img.column_dimensions['A'].width = 50 
+                    
                     row_offset = 1
                     for idx, (b, fig) in enumerate(st.session_state.generated_figs):
                         ws_img.cell(row=row_offset, column=1, value=f"Modul {idx+1}: Odvinout {b['odvinuto_mm']/1000:.2f} m")
@@ -356,7 +403,7 @@ with tab_kalk:
                         img_data.seek(0)
                         img = xlImage(img_data)
                         ws_img.add_image(img, f"A{row_offset}")
-                        row_offset += 18 # Odsazení pro další obrázek
+                        row_offset += 18 
                         
                 st.download_button("📥 Stáhnout Excel vč. Nákresů", buf.getvalue(), "Kalkulace_a_vyroba.xlsx", use_container_width=True)
 
