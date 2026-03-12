@@ -13,8 +13,8 @@ from openpyxl.drawing.image import Image as xlImage
 from openpyxl.utils import get_column_letter
 
 # --- NASTAVENÍ STRÁNKY ---
-st.set_page_config(page_title="Stavinvest Konfigurátor", page_icon="✂️", layout="wide")
-st.title("✂️ Stavinvest Konfigurátor (Výrobní Moduly + Excel Export)")
+st.set_page_config(page_title="Konfigurátor Stavinvest", page_icon="✂️", layout="wide")
+st.title("✂️ Konfigurátor Stavinvest")
 
 # ==========================================
 # MODULOVÝ PRUHOVÝ ALGORITMUS (PRO PRŮBĚŽNÉ ŘEZY)
@@ -179,6 +179,11 @@ if 'zakazka' not in st.session_state:
 mat_dict = {r["Materiál"]: r for _, r in st.session_state.materialy_df.iterrows()}
 prv_dict = {r["Typ prvku"]: r for _, r in st.session_state.prvky_df.iterrows()}
 
+# Ujištění, že ve starších uložených datech je klíč pro atyp
+for p in st.session_state.zakazka:
+    if "Atyp příplatek/ks (Kč)" not in p:
+        p["Atyp příplatek/ks (Kč)"] = 0.0
+
 # --- ZÁLOŽKY ---
 tab_kalk, tab_nakres, tab_data, tab_nastaveni = st.tabs(["🧮 Kalkulátor", "📐 Nákres 2D Řezů", "⚙️ Data (Ceník)", "🔧 Nastavení"])
 
@@ -220,13 +225,15 @@ with tab_kalk:
         v_ohyby = st.number_input("Počet ohybů (lze upravit)", value=default_ohyby, min_value=0)
         v_m = st.number_input("Délka (m)", value=2.5, step=0.1)
         v_ks = st.number_input("Kusů", min_value=1, value=1)
+        v_priplatek = st.number_input("Atyp. příplatek/ks (Kč)", value=0.0, step=50.0)
         
         if st.button("➕ Přidat do zakázky", type="primary", use_container_width=True):
             st.session_state.zakazka.append({
                 "Prvek": v_prvek,
                 "Ohyby": v_ohyby,
                 "Metrů": v_m, 
-                "Kusů": v_ks
+                "Kusů": v_ks,
+                "Atyp příplatek/ks (Kč)": v_priplatek
             })
             st.rerun()
             
@@ -249,7 +256,8 @@ with tab_kalk:
                     "Prvek": st.column_config.SelectboxColumn("Prvek", options=list(prv_dict.keys()), required=True),
                     "Ohyby": st.column_config.NumberColumn("Ohyby", min_value=0, step=1, required=True),
                     "Metrů": st.column_config.NumberColumn("Metrů", min_value=0.1, step=0.1, required=True),
-                    "Kusů": st.column_config.NumberColumn("Kusů", min_value=1, step=1, required=True)
+                    "Kusů": st.column_config.NumberColumn("Kusů", min_value=1, step=1, required=True),
+                    "Atyp příplatek/ks (Kč)": st.column_config.NumberColumn("Atyp příplatek/ks (Kč)", min_value=0.0, step=10.0, required=True)
                 },
                 hide_index=True,
                 num_rows="dynamic",
@@ -264,6 +272,7 @@ with tab_kalk:
                 with st.spinner("🧠 Vytvářím výrobní moduly pro 4m stroje a kreslím plány..."):
                     items = []
                     cena_prace = 0
+                    cena_priplatky = 0
                     conf = st.session_state.config
                     m_data = mat_dict[v_mat]
                     
@@ -286,6 +295,7 @@ with tab_kalk:
                             continue
 
                         cena_prace += (p["Ohyby"] * conf["cena_ohyb"]) * seg * p["Kusů"]
+                        cena_priplatky += p.get("Atyp příplatek/ks (Kč)", 0.0) * p["Kusů"]
                         
                         for _ in range(int(p["Kusů"] * seg)):
                             items.append({"id": row_id, "Prvek": p['Prvek'], "L": L_seg, "rš": p_data["RŠ (mm)"]})
@@ -315,6 +325,7 @@ with tab_kalk:
                         
                         st.session_state.sumar = sumar
                         st.session_state.cena_prace = cena_prace
+                        st.session_state.cena_priplatky = cena_priplatky
                         st.session_state.c_mat = tot_cena_mat
                         
                         figs = []
@@ -333,7 +344,6 @@ with tab_kalk:
                                 ax.text(p['x'] + p['draw_w']/2, p['y'] + p['draw_h']/2, f"Ř.{p['id']} {p['Prvek']}\n({p['L']:.0f}x{p['rš']}){rotace_text}", 
                                         ha='center', va='center', fontsize=font_size, color='white', weight='bold')
                             
-                            # KLÍČOVÁ OPRAVA: Pevné měřítko pro reálné zobrazení délek!
                             osa_x_max = max(max_tab_len, 100) 
                             ax.set_xlim(0, osa_x_max * 1.02)
                             
@@ -354,12 +364,14 @@ with tab_kalk:
                 
                 c_mat = st.session_state.c_mat
                 cena_prace = st.session_state.cena_prace
-                r1, r2, r3 = st.columns(3)
+                cena_priplatky = st.session_state.get('cena_priplatky', 0)
+                
+                r1, r2, r3, r4 = st.columns(4)
                 r1.metric("Materiál", f"{c_mat:,.2f} Kč")
                 r2.metric("Práce (Ohyby)", f"{cena_prace:,.2f} Kč")
-                r3.metric("CELKEM ZAKÁZKA (vč. DPH)", f"{(c_mat + cena_prace)*1.21:,.2f} Kč")
+                r3.metric("Atyp. příplatky", f"{cena_priplatky:,.2f} Kč")
+                r4.metric("CELKEM ZAKÁZKA (vč. DPH)", f"{(c_mat + cena_prace + cena_priplatky)*1.21:,.2f} Kč")
 
-                # EXPORT DO EXCELU (S AUTOMATICKOU ŠÍŘKOU SLOUPCŮ)
                 buf = io.BytesIO()
                 with pd.ExcelWriter(buf, engine='openpyxl') as wr:
                     info_df = pd.DataFrame([
@@ -374,7 +386,6 @@ with tab_kalk:
                     
                     pd.DataFrame.from_dict(st.session_state.sumar, orient='index').to_excel(wr, sheet_name='Souhrn_Materiálu')
                     
-                    # Formátování sloupců (Automatická šířka podle textu)
                     wb = wr.book
                     for sheet_name in ['Zadání', 'Souhrn_Materiálu']:
                         ws = wr.sheets[sheet_name]
@@ -390,7 +401,6 @@ with tab_kalk:
                             adjusted_width = (max_length + 2)
                             ws.column_dimensions[column_letter].width = adjusted_width
                     
-                    # Generování obrázků do třetího listu
                     ws_img = wb.create_sheet('Výrobní nákresy')
                     ws_img.column_dimensions['A'].width = 50 
                     
