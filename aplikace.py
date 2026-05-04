@@ -7,66 +7,13 @@ import random
 from collections import defaultdict
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
-
-# Pro vkládání obrázků a formátování do Excelu
 from openpyxl.drawing.image import Image as xlImage
 from openpyxl.utils import get_column_letter
 
 # --- NASTAVENÍ STRÁNKY ---
 st.set_page_config(page_title="Konfigurátor Stavinvest", page_icon="✂️", layout="wide")
-
-# ==========================================
-# 🔒 PŘIHLAŠOVACÍ ÚDAJE (Kreativní klempířská hesla)
-# ==========================================
-UZIVATELE = {
-    "admin@stavinvest.cz": "HlavniKlempir!",
-    "test1@stavinvest.cz": "PlechovaStrecha1",
-    "test2@stavinvest.cz": "Okapnice2026",
-    "test3@stavinvest.cz": "TitanzinekRulez",
-    "test4@stavinvest.cz": "FalcujemeDobre",
-    "test5@stavinvest.cz": "OhybackaStroj",
-    "test6@stavinvest.cz": "SvitekPlechu99",
-    "test7@stavinvest.cz": "KlempiroveCZ",
-    "test8@stavinvest.cz": "ZavetrnaLista#",
-    "test9@stavinvest.cz": "StavinvestPro",
-    "test10@stavinvest.cz": "NuzkyNaPlech123"
-}
-
-if 'logged_in' not in st.session_state:
-    st.session_state.logged_in = False
-    st.session_state.current_user = ""
-
-if not st.session_state.logged_in:
-    st.markdown("<br><br>", unsafe_allow_html=True)
-    col1, col2, col3 = st.columns([1, 1, 1])
-    with col2:
-        st.markdown("<h2 style='text-align: center;'>🔒 Přihlášení do systému</h2>", unsafe_allow_html=True)
-        with st.form("login_form"):
-            email = st.text_input("E-mail")
-            password = st.text_input("Heslo", type="password")
-            submit = st.form_submit_button("Přihlásit se", use_container_width=True)
-
-            if submit:
-                if email in UZIVATELE and UZIVATELE[email] == password:
-                    st.session_state.logged_in = True
-                    st.session_state.current_user = email
-                    st.rerun()
-                else:
-                    st.error("Chybný e-mail nebo heslo!")
-    st.stop()
-
-# --- BOČNÍ PANEL (Odhlášení) ---
-st.sidebar.write(f"👤 Přihlášen(a): **{st.session_state.current_user}**")
-if st.sidebar.button("🚪 Odhlásit se", use_container_width=True):
-    st.session_state.logged_in = False
-    st.session_state.current_user = ""
-    st.rerun()
-
-
-# ==========================================
-# HLAVNÍ APLIKACE (Odemkne se až po přihlášení)
-# ==========================================
 st.title("✂️ Konfigurátor Stavinvest")
+st.info("💡 **Nová funkce:** Rozvinutou šíři (RŠ) nyní zadáváte ručně v milimetrech pro každý prvek zvlášť.")
 
 # ==========================================
 # MODULOVÝ PRUHOVÝ ALGORITMUS (PRO PRŮBĚŽNÉ ŘEZY)
@@ -194,34 +141,18 @@ if 'materialy_df' not in st.session_state:
 
 if 'prvky_df' not in st.session_state:
     st.session_state.prvky_df = pd.DataFrame([
-        {"Typ prvku": "závětrná lišta spodní r.š.250", "RŠ (mm)": 250, "Ohyby": 6},
-        {"Typ prvku": "závětrná lišta spodní r.š.330", "RŠ (mm)": 333, "Ohyby": 6},
-        {"Typ prvku": "závětrná lišta spodní r.š.410", "RŠ (mm)": 410, "Ohyby": 6},
-        {"Typ prvku": "okapnice do r.š. 200", "RŠ (mm)": 200, "Ohyby": 2},
-        {"Typ prvku": "okapnice r.š.201-250", "RŠ (mm)": 250, "Ohyby": 2},
-        {"Typ prvku": "okapnice r.š. 250 - 333", "RŠ (mm)": 333, "Ohyby": 2},
-        {"Typ prvku": "lemování ke zdi r.š.250", "RŠ (mm)": 250, "Ohyby": 3},
-        {"Typ prvku": "lemování ke zdi r.š.330", "RŠ (mm)": 333, "Ohyby": 6},
-        {"Typ prvku": "úžlabí r.š.500", "RŠ (mm)": 500, "Ohyby": 3},
-        {"Typ prvku": "úžlabí rš 670", "RŠ (mm)": 670, "Ohyby": 3},
-        {"Typ prvku": "úžlabí s drážkou rš. 500", "RŠ (mm)": 500, "Ohyby": 5},
-        {"Typ prvku": "úžlabí s drážkou rš. 670", "RŠ (mm)": 670, "Ohyby": 5},
-        {"Typ prvku": "závětrná lišta pultová r.š.250", "RŠ (mm)": 250, "Ohyby": 6},
-        {"Typ prvku": "závětrná lišta pultová r.š.330", "RŠ (mm)": 333, "Ohyby": 6},
-        {"Typ prvku": "atikový plech do r.š. 500", "RŠ (mm)": 500, "Ohyby": 4},
-        {"Typ prvku": "L lišta", "RŠ (mm)": 100, "Ohyby": 2},
-        {"Typ prvku": "stěnová lišta", "RŠ (mm)": 100, "Ohyby": 2},
-        {"Typ prvku": "parapet do r.š. 250", "RŠ (mm)": 250, "Ohyby": 3},
-        {"Typ prvku": "parapet do r.š. 330", "RŠ (mm)": 333, "Ohyby": 3},
-        {"Typ prvku": "parapet do r.š. 500", "RŠ (mm)": 500, "Ohyby": 3},
-        {"Typ prvku": "parapet do r.š. 250 včetně boků", "RŠ (mm)": 250, "Ohyby": 3},
-        {"Typ prvku": "parapet do r.š. 330 včetně boků", "RŠ (mm)": 333, "Ohyby": 3},
-        {"Typ prvku": "parapet do r.š. 500 včetně boků", "RŠ (mm)": 500, "Ohyby": 3},
-        {"Typ prvku": "atypický výrobek rš 0 - 100", "RŠ (mm)": 100, "Ohyby": 9},
-        {"Typ prvku": "atypický výrobek rš 100 - 250", "RŠ (mm)": 250, "Ohyby": 9},
-        {"Typ prvku": "atypický výrobek rš 251 - 333", "RŠ (mm)": 333, "Ohyby": 9},
-        {"Typ prvku": "atypický výrobek rš 334 - 500", "RŠ (mm)": 500, "Ohyby": 9},
-        {"Typ prvku": "atypický výrobek rš 501 - 1250", "RŠ (mm)": 1250, "Ohyby": 9}
+        {"Typ prvku": "Závětrná lišta spodní", "Ohyby": 6},
+        {"Typ prvku": "Závětrná lišta pultová", "Ohyby": 6},
+        {"Typ prvku": "Okapnice", "Ohyby": 2},
+        {"Typ prvku": "Lemování ke zdi", "Ohyby": 3},
+        {"Typ prvku": "Úžlabí", "Ohyby": 3},
+        {"Typ prvku": "Úžlabí s drážkou", "Ohyby": 5},
+        {"Typ prvku": "Atikový plech", "Ohyby": 4},
+        {"Typ prvku": "L lišta", "Ohyby": 2},
+        {"Typ prvku": "Stěnová lišta", "Ohyby": 2},
+        {"Typ prvku": "Parapet", "Ohyby": 3},
+        {"Typ prvku": "Parapet včetně boků", "Ohyby": 3},
+        {"Typ prvku": "Atypický výrobek", "Ohyby": 9}
     ])
 
 if 'zakazka' not in st.session_state:
@@ -229,10 +160,6 @@ if 'zakazka' not in st.session_state:
 
 mat_dict = {r["Materiál"]: r for _, r in st.session_state.materialy_df.iterrows()}
 prv_dict = {r["Typ prvku"]: r for _, r in st.session_state.prvky_df.iterrows()}
-
-for p in st.session_state.zakazka:
-    if "Atyp příplatek/ks (Kč)" not in p:
-        p["Atyp příplatek/ks (Kč)"] = 0.0
 
 # --- ZÁLOŽKY ---
 tab_kalk, tab_nakres, tab_data, tab_nastaveni = st.tabs(["🧮 Kalkulátor", "📐 Nákres 2D Řezů", "⚙️ Data (Ceník)", "🔧 Nastavení"])
@@ -246,15 +173,9 @@ with tab_nastaveni:
 
 with tab_data:
     st.header("⚙️ Správa dat (Ceník a materiály)")
-    # Omezení práv pouze na administrátora
-    if st.session_state.current_user == "admin@stavinvest.cz":
-        st.write("Jako administrátor můžete upravovat ceny a materiály. (Pozn.: Změny platí do restartu aplikace.)")
-        st.session_state.materialy_df = st.data_editor(st.session_state.materialy_df, num_rows="dynamic", key="em", use_container_width=True)
-        st.session_state.prvky_df = st.data_editor(st.session_state.prvky_df, num_rows="dynamic", key="ep", use_container_width=True)
-    else:
-        st.warning("Pohled pro čtení. Úpravy ceníku může provádět pouze administrátor.")
-        st.dataframe(st.session_state.materialy_df, use_container_width=True)
-        st.dataframe(st.session_state.prvky_df, use_container_width=True)
+    st.write("Aplikace je plně odemčena pro úpravy ceníku i prvků.")
+    st.session_state.materialy_df = st.data_editor(st.session_state.materialy_df, num_rows="dynamic", key="em", use_container_width=True)
+    st.session_state.prvky_df = st.data_editor(st.session_state.prvky_df, num_rows="dynamic", key="ep", use_container_width=True)
 
 # ==========================================
 # ZÁLOŽKA: KALKULÁTOR
@@ -280,6 +201,9 @@ with tab_kalk:
         st.header("2. Přidat položku")
         v_prvek = st.selectbox("Prvek", list(prv_dict.keys()))
         
+        # NOVÉ: Volné zadávání rozvinuté šíře
+        v_rs = st.number_input("Rozvinutá šíře - RŠ (mm)", value=250, min_value=10, step=1)
+        
         default_ohyby = int(prv_dict[v_prvek]["Ohyby"]) if v_prvek in prv_dict else 0
         v_ohyby = st.number_input("Počet ohybů (lze upravit)", value=default_ohyby, min_value=0)
         v_m = st.number_input("Délka (m)", value=2.5, step=0.1)
@@ -289,6 +213,7 @@ with tab_kalk:
         if st.button("➕ Přidat do zakázky", type="primary", use_container_width=True):
             st.session_state.zakazka.append({
                 "Prvek": v_prvek,
+                "RŠ (mm)": v_rs,
                 "Ohyby": v_ohyby,
                 "Metrů": v_m, 
                 "Kusů": v_ks,
@@ -313,6 +238,7 @@ with tab_kalk:
                 column_config={
                     "Řádek": st.column_config.Column("Řádek", disabled=True),
                     "Prvek": st.column_config.SelectboxColumn("Prvek", options=list(prv_dict.keys()), required=True),
+                    "RŠ (mm)": st.column_config.NumberColumn("RŠ (mm)", min_value=10, step=1, required=True),
                     "Ohyby": st.column_config.NumberColumn("Ohyby", min_value=0, step=1, required=True),
                     "Metrů": st.column_config.NumberColumn("Metrů", min_value=0.1, step=0.1, required=True),
                     "Kusů": st.column_config.NumberColumn("Kusů", min_value=1, step=1, required=True),
@@ -337,27 +263,27 @@ with tab_kalk:
                     
                     for idx, p in enumerate(st.session_state.zakazka):
                         row_id = idx + 1 
-                        p_data = prv_dict[p["Prvek"]]
                         L_mm = p["Metrů"] * 1000
+                        rs_mm = p["RŠ (mm)"]
                         
                         seg = 1 if L_mm <= conf["max_delka"] else math.ceil((L_mm - conf["presah"]) / (conf["max_delka"] - conf["presah"]))
                         L_seg = (L_mm + (seg - 1) * conf["presah"]) / seg
                         
                         if conf["povolit_rotaci"]:
-                            vejde_se = (p_data["RŠ (mm)"] <= m_data["Šířka (mm)"]) or \
-                                       (L_seg <= m_data["Šířka (mm)"] and p_data["RŠ (mm)"] <= m_data["Max délka tabule (mm)"])
+                            vejde_se = (rs_mm <= m_data["Šířka (mm)"]) or \
+                                       (L_seg <= m_data["Šířka (mm)"] and rs_mm <= m_data["Max délka tabule (mm)"])
                         else:
-                            vejde_se = (p_data["RŠ (mm)"] <= m_data["Šířka (mm)"])
+                            vejde_se = (rs_mm <= m_data["Šířka (mm)"])
                             
                         if not vejde_se:
-                            st.error(f"CHYBA na řádku {row_id}: Prvek '{p['Prvek']}' je moc široký na svitek {v_mat}!")
+                            st.error(f"CHYBA na řádku {row_id}: Prvek '{p['Prvek']}' s RŠ {rs_mm} mm je moc široký na materiál {v_mat}!")
                             continue
 
                         cena_prace += (p["Ohyby"] * conf["cena_ohyb"]) * seg * p["Kusů"]
                         cena_priplatky += p.get("Atyp příplatek/ks (Kč)", 0.0) * p["Kusů"]
                         
                         for _ in range(int(p["Kusů"] * seg)):
-                            items.append({"id": row_id, "Prvek": p['Prvek'], "L": L_seg, "rš": p_data["RŠ (mm)"]})
+                            items.append({"id": row_id, "Prvek": p['Prvek'], "L": L_seg, "rš": rs_mm})
 
                     if items:
                         w_coil = m_data["Šířka (mm)"]
@@ -408,8 +334,8 @@ with tab_kalk:
                             
                             ax.set_ylim(0, w_coil * 1.05)
                             ax.set_xlabel("Délka modulu (mm)")
-                            ax.set_ylabel("Šířka svitku (mm)")
-                            ax.set_title(f"Modul {i+1}: Ustřihnout {odvinuto_mm/1000:.2f} m")
+                            ax.set_ylabel("Šířka materiálu (mm)")
+                            ax.set_title(f"Modul {i+1}: Odvinout/Ustřihnout {odvinuto_mm/1000:.2f} m")
                             figs.append((b, fig))
                         
                         st.session_state.generated_figs = figs
