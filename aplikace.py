@@ -158,11 +158,9 @@ if 'prvky_df' not in st.session_state:
 if 'zakazka' not in st.session_state:
     st.session_state.zakazka = []
 
-# Pomocné klíče pro reset formuláře
-if 'form_rs' not in st.session_state: st.session_state.form_rs = 250
-if 'form_m' not in st.session_state: st.session_state.form_m = 2.5
-if 'form_ks' not in st.session_state: st.session_state.form_ks = 1
-if 'form_priplatek' not in st.session_state: st.session_state.form_priplatek = 0.0
+# Inicializace stavů pro zadávací políčka, abychom je mohli čistit bezpečně
+if 'reset_counter' not in st.session_state:
+    st.session_state.reset_counter = 0
 
 mat_dict = {r["Materiál"]: r for _, r in st.session_state.materialy_df.iterrows()}
 prv_dict = {r["Typ prvku"]: r for _, r in st.session_state.prvky_df.iterrows()}
@@ -207,14 +205,14 @@ with tab_kalk:
         st.header("2. Přidat položku")
         v_prvek = st.selectbox("Prvek", list(prv_dict.keys()))
         
-        # Volné zadávání s klíči napojenými na session_state pro snadný reset
-        v_rs = st.number_input("Rozvinutá šíře - RŠ (mm)", min_value=10, step=1, key="form_rs")
+        # Unikátní klíč založený na počítadle reset_counter zaručí vyčištění hodnot po kliknutí na přidání
+        v_rs = st.number_input("Rozvinutá šíře - RŠ (mm)", min_value=10, value=250, step=1, key=f"rs_{st.session_state.reset_counter}")
         
         default_ohyby = int(prv_dict[v_prvek]["Ohyby"]) if v_prvek in prv_dict else 0
-        v_ohyby = st.number_input("Počet ohybů (lze upravit)", value=default_ohyby, min_value=0)
-        v_m = st.number_input("Délka (m)", step=0.1, key="form_m")
-        v_ks = st.number_input("Kusů", min_value=1, key="form_ks")
-        v_priplatek = st.number_input("Atyp. příplatek/ks (Kč)", step=50.0, key="form_priplatek")
+        v_ohyby = st.number_input("Počet ohybů (lze upravit)", value=default_ohyby, min_value=0, key=f"ohyby_{st.session_state.reset_counter}")
+        v_m = st.number_input("Délka (m)", value=2.5, step=0.1, key=f"m_{st.session_state.reset_counter}")
+        v_ks = st.number_input("Kusů", min_value=1, value=1, key=f"ks_{st.session_state.reset_counter}")
+        v_priplatek = st.number_input("Atyp. příplatek/ks (Kč)", value=0.0, step=50.0, key=f"prip_{st.session_state.reset_counter}")
         
         if st.button("➕ Přidat do zakázky", type="primary", use_container_width=True):
             st.session_state.zakazka.append({
@@ -225,11 +223,8 @@ with tab_kalk:
                 "Kusů": v_ks,
                 "Atyp příplatek/ks (Kč)": v_priplatek
             })
-            # Vynulování/Reset zadávacích polí zpět na výchozí hodnoty
-            st.session_state.form_rs = 250
-            st.session_state.form_m = 2.5
-            st.session_state.form_ks = 1
-            st.session_state.form_priplatek = 0.0
+            # Bezpečné inkrementování počítadla, které vyčistí (vynuluje) formulář na výchozí hodnoty
+            st.session_state.reset_counter += 1
             st.rerun()
             
         if st.button("🗑️ Smazat vše", use_container_width=True):
@@ -265,7 +260,7 @@ with tab_kalk:
             st.session_state.zakazka = updated_zakazka
             
             if st.button("🚀 SPOČÍTAT ZAKÁZKU", type="primary", use_container_width=True):
-                with st.spinner("🧠 Vytvářím výrobní moduly pro stroje a kreslím plány..."):
+                with st.spinner("🧠 Vytvářím výrobní moduly pro stroje..."):
                     items = []
                     cena_prace = 0
                     cena_priplatky = 0
@@ -290,7 +285,7 @@ with tab_kalk:
                             st.error(f"CHYBA na řádku {row_id}: Prvek '{p['Prvek']}' s RŠ {rs_mm} mm je moc široký na materiál {v_mat}!")
                             continue
 
-                        # OPRAVENO: Cena práce se počítá jako (Ohyby * cena za ohyb) * délka v metrech * kusy
+                        # OPRAVENO: Cena práce se počítá jako: ohyby * cena za ohyb * délka (v metrech) * kusy
                         cena_prace += (p["Ohyby"] * conf["cena_ohyb"]) * p["Metrů"] * p["Kusů"]
                         cena_priplatky += p.get("Atyp příplatek/ks (Kč)", 0.0) * p["Kusů"]
                         
@@ -363,7 +358,7 @@ with tab_kalk:
                 cena_prace = st.session_state.cena_prace
                 cena_priplatky = st.session_state.get('cena_priplatky', 0)
                 
-                # OPRAVENO: Popisky jasně specifikují, že se jedná o ceny bez DPH, a konečná cena uvádí vč. DPH 21 %
+                # Popisky nově jasně specifikují ceny bez DPH a s DPH 21%
                 r1, r2, r3, r4 = st.columns(4)
                 r1.metric("Materiál (bez DPH)", f"{c_mat:,.2f} Kč")
                 r2.metric("Práce / Ohyby (bez DPH)", f"{cena_prace:,.2f} Kč")
