@@ -156,7 +156,7 @@ with tab_kalk:
                 st.divider()
                 st.subheader("🧾 Souhrnná kalkulace")
                 
-                # Tabulka s daty
+                # Příprava dat
                 souhrn_final = pd.DataFrame([
                     {"Položka": "Materiál (bez DPH)", "Částka": r['c_mat']},
                     {"Položka": "Práce / Ohyby (bez DPH)", "Částka": r['c_prace']},
@@ -165,13 +165,21 @@ with tab_kalk:
                     {"Položka": "CELKEM S DPH 21 %", "Částka": bez_dph * 1.21}
                 ])
                 
-                # Zobrazení tabulky se zarovnáním doprava u čísel
+                # Funkce pro zvýraznění posledních dvou řádků
+                def highlight_totals(s):
+                    is_total = s.name in [3, 4] # Indexy celkových řádků
+                    return ['background-color: #f0f2f6; font-weight: bold;' if is_total else '' for v in s]
+
+                # Aplikace stylů
+                styled_df = souhrn_final.style.apply(highlight_totals, axis=1).format({"Částka": "{:,.2f} Kč"})
+
+                # Zobrazení pomocí st.dataframe se zarovnáním doprava
                 st.dataframe(
-                    souhrn_final,
+                    styled_df,
                     column_config={
-                        "Položka": st.column_config.TextColumn("Položka"),
+                        "Položka": st.column_config.TextColumn("Položka", width="medium"),
                         "Částka": st.column_config.NumberColumn(
-                            "Částka (Kč)",
+                            "Částka",
                             format="%.2f Kč",
                         )
                     },
