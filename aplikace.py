@@ -12,6 +12,14 @@ import matplotlib.patches as patches
 st.set_page_config(page_title="Konfigurátor Stavinvest", page_icon="✂️", layout="wide")
 st.title("✂️ Konfigurátor Stavinvest")
 
+# --- INICIALIZACE ---
+if 'config' not in st.session_state:
+    st.session_state.config = {"cena_ohyb": 10.0, "max_delka": 4000, "presah": 50}
+if 'zakazka' not in st.session_state:
+    st.session_state.zakazka = []
+if 'reset_counter' not in st.session_state:
+    st.session_state.reset_counter = 0
+
 # ==========================================
 # MODULOVÝ PRUHOVÝ ALGORITMUS
 # ==========================================
@@ -64,7 +72,7 @@ def pack_module_strips(items, coil_w, max_l, allow_rotation=True):
             formatted_bins.append({'w_coil': coil_w, 'odvinuto_mm': m['l'], 'placed': placed})
     return formatted_bins
 
-# --- DATA (KOMPLETNÍ SEZNAMY MATERIÁLŮ) ---
+# --- DATA: MATERIÁLY (15 položek) ---
 if 'materialy_df' not in st.session_state:
     st.session_state.materialy_df = pd.DataFrame([
         {"Materiál": "svitek POZINK 0,55x1000mm", "Interní kód SI": "0160P003", "Šířka (mm)": 1000, "Cena/m2": 200.0, "Max délka": 50000},
@@ -84,7 +92,7 @@ if 'materialy_df' not in st.session_state:
         {"Materiál": "tabule PVC 0,6x1000x2000 ROOFPLAN 7035", "Interní kód SI": "0150PVC0037035", "Šířka (mm)": 1000, "Cena/m2": 591.0, "Max délka": 2000}
     ])
 
-# --- DATA (KOMPLETNÍ SEZNAMY PRVKŮ) ---
+# --- DATA: PRVKY (12 položek) ---
 if 'prvky_df' not in st.session_state:
     st.session_state.prvky_df = pd.DataFrame([
         {"Typ prvku": "Závětrná lišta spodní", "Ohyby": 6},
@@ -101,10 +109,6 @@ if 'prvky_df' not in st.session_state:
         {"Typ prvku": "Atypický výrobek", "Ohyby": 9}
     ])
 
-if 'zakazka' not in st.session_state: st.session_state.zakazka = []
-if 'config' not in st.session_state: st.session_state.config = {"cena_ohyb": 10.0, "max_delka": 4000, "presah": 50}
-if 'reset_counter' not in st.session_state: st.session_state.reset_counter = 0
-
 mat_dict = {r["Materiál"]: r for _, r in st.session_state.materialy_df.iterrows()}
 prv_dict = {r["Typ prvku"]: r for _, r in st.session_state.prvky_df.iterrows()}
 
@@ -116,18 +120,17 @@ with tab_data:
 
 with tab_kalk:
     st.subheader("1. Obecné údaje")
-    col_inf1, col_inf2, col_inf3 = st.columns(3)
-    with col_inf1:
+    ci1, ci2, ci3 = st.columns(3)
+    with ci1:
         st.session_state.odberatel = st.text_input("Odběratel / Projekt", value=st.session_state.get('odberatel', ''))
-    with col_inf2:
-        st.session_state.config["max_delka"] = st.number_input("Max. délka ohýbačky (mm)", value=st.session_state.config["max_delka"])
-    with col_inf3:
-        st.session_state.config["presah"] = st.number_input("Přesah spojů (mm)", value=st.session_state.config["presah"])
+    with ci2:
+        st.session_state.config["max_delka"] = st.number_input("Max. délka ohýbačky (mm)", value=int(st.session_state.config.get("max_delka", 4000)))
+    with ci3:
+        st.session_state.config["presah"] = st.number_input("Přesah spojů (mm)", value=int(st.session_state.config.get("presah", 50)))
     
     st.markdown("---")
 
     col_in, col_res = st.columns([1, 2])
-    
     with col_in:
         v_mat = st.selectbox("Materiál pro zakázku", list(mat_dict.keys()))
         st.subheader("2. Přidat položku")
@@ -191,22 +194,11 @@ with tab_kalk:
                 ])
                 
                 def highlight_totals(s):
-                    is_total = s.name in [3, 4]
-                    return ['background-color: #f0f2f6; font-weight: bold;' if is_total else '' for v in s]
+                    return ['background-color: #f0f2f6; font-weight: bold;' if s.name in [3, 4] else '' for _ in s]
 
                 styled_df = souhrn_final.style.apply(highlight_totals, axis=1).format({"Částka": "{:,.2f} Kč"})
+                st.dataframe(styled_df, column_config={"Položka": st.column_config.TextColumn("Položka", width="medium"), "Částka": st.column_config.NumberColumn("Částka", format="%.2f Kč")}, hide_index=True, use_container_width=True)
 
-                st.dataframe(
-                    styled_df,
-                    column_config={
-                        "Položka": st.column_config.TextColumn("Položka", width="medium"),
-                        "Částka": st.column_config.NumberColumn("Částka", format="%.2f Kč")
-                    },
-                    hide_index=True,
-                    use_container_width=True
-                )
-
-# --- NÁKRESOVÁ ČÁST ---
 with tab_nakres:
     if st.session_state.get('calc_done') and 'res' in st.session_state:
         barvy = ['#3498db', '#e74c3c', '#2ecc71', '#f1c40f', '#9b59b6', '#e67e22', '#1abc9c']
