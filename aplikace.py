@@ -64,20 +64,39 @@ def pack_module_strips(items, coil_w, max_l, allow_rotation=True):
             formatted_bins.append({'w_coil': coil_w, 'odvinuto_mm': m['l'], 'placed': placed})
     return formatted_bins
 
-# --- DATA ---
+# --- DATA (KOMPLETNÍ SEZNAMY) ---
 if 'materialy_df' not in st.session_state:
     st.session_state.materialy_df = pd.DataFrame([
         {"Materiál": "svitek POZINK 0,55x1000mm", "Interní kód SI": "0160P003", "Šířka (mm)": 1000, "Cena/m2": 200.0, "Max délka": 50000},
         {"Materiál": "svitek POZINK 0,55x670mm", "Interní kód SI": "0160P002", "Šířka (mm)": 670, "Cena/m2": 218.0, "Max délka": 50000},
-        {"Materiál": "svitek TITANZINEK 0,6x1000mm", "Interní kód SI": "0160T003", "Šířka (mm)": 1000, "Cena/m2": 611.0, "Max délka": 50000}
+        {"Materiál": "svitek POZINK 0,5x1250mm PES STANDARD BARVY O+SF", "Interní kód SI": "0160LP0107016O+SF", "Šířka (mm)": 1250, "Cena/m2": 282.0, "Max délka": 50000},
+        {"Materiál": "svitek POZINK 0,5x1250mm PES NESTANDARD O+SF", "Interní kód SI": "0160LP0109010O+SF", "Šířka (mm)": 1250, "Cena/m2": 301.0, "Max délka": 50000},
+        {"Materiál": "Comax FALC POZINK 0,5x620mm PES šedá J+SF", "Interní kód SI": "0160LP0017016J+SF", "Šířka (mm)": 620, "Cena/m2": 456.0, "Max délka": 50000},
+        {"Materiál": "svitek TITANZINEK 0,6x1000mm", "Interní kód SI": "0160T003", "Šířka (mm)": 1000, "Cena/m2": 611.0, "Max délka": 50000},
+        {"Materiál": "svitek TITANZINEK 0,6x670mm", "Interní kód SI": "0160T002", "Šířka (mm)": 670, "Cena/m2": 611.0, "Max délka": 50000},
+        {"Materiál": "svitek MĚĎ 0,55x1000mm", "Interní kód SI": "0160M011000", "Šířka (mm)": 1000, "Cena/m2": 2120.0, "Max délka": 50000},
+        {"Materiál": "svitek MĚĎ 0,55x670mm", "Interní kód SI": "0160M010670", "Šířka (mm)": 670, "Cena/m2": 2120.0, "Max délka": 50000},
+        {"Materiál": "PREFA svitek CLR 0,7x1000 PE", "Interní kód SI": "65P31105", "Šířka (mm)": 1000, "Cena/m2": 457.0, "Max délka": 30000},
+        {"Materiál": "PREFA svitek Prefalz 0,7x1000 hladký", "Interní kód SI": "65P40100", "Šířka (mm)": 1000, "Cena/m2": 578.0, "Max délka": 30000},
+        {"Materiál": "PREFA svitek Prefalz 0,7x650 hladký", "Interní kód SI": "65P40200", "Šířka (mm)": 650, "Cena/m2": 578.0, "Max délka": 50000},
+        {"Materiál": "Comax FALC AL 0,7x600mm", "Interní kód SI": "0160ALCO0706007016", "Šířka (mm)": 600, "Cena/m2": 622.0, "Max délka": 50000},
+        {"Materiál": "tabule AL 0,6x1000x2000 PES jednostranná s folií", "Interní kód SI": "0150AL06100020007016J+SF", "Šířka (mm)": 1000, "Cena/m2": 421.0, "Max délka": 2000},
+        {"Materiál": "tabule PVC 0,6x1000x2000 ROOFPLAN 7035", "Interní kód SI": "0150PVC0037035", "Šířka (mm)": 1000, "Cena/m2": 591.0, "Max délka": 2000}
     ])
 
 if 'prvky_df' not in st.session_state:
     st.session_state.prvky_df = pd.DataFrame([
         {"Typ prvku": "Závětrná lišta spodní", "Ohyby": 6},
+        {"Typ prvku": "Závětrná lišta pultová", "Ohyby": 6},
         {"Typ prvku": "Okapnice", "Ohyby": 2},
+        {"Typ prvku": "Lemování ke zdi", "Ohyby": 3},
         {"Typ prvku": "Úžlabí", "Ohyby": 3},
+        {"Typ prvku": "Úžlabí s drážkou", "Ohyby": 5},
+        {"Typ prvku": "Atikový plech", "Ohyby": 4},
+        {"Typ prvku": "L lišta", "Ohyby": 2},
+        {"Typ prvku": "Stěnová lišta", "Ohyby": 2},
         {"Typ prvku": "Parapet", "Ohyby": 3},
+        {"Typ prvku": "Parapet včetně boků", "Ohyby": 3},
         {"Typ prvku": "Atypický výrobek", "Ohyby": 9}
     ])
 
@@ -113,7 +132,6 @@ with tab_kalk:
             f_ohyby = st.number_input("Počet ohybů", value=default_ohyby, min_value=0, key=f"ohyby_{v_prvek}_{st.session_state.reset_counter}")
             f_m = st.number_input("Délka (m)", value=2.5, step=0.1, key=f"m_{st.session_state.reset_counter}")
             f_ks = st.number_input("Kusů", min_value=1, value=1, key=f"ks_{st.session_state.reset_counter}")
-            # PŘÍPLATEK JE ZPĚT VE FORMULÁŘI A POUZE CELÁ ČÍSLA
             f_prip = st.number_input("Atyp. příplatek/ks (Kč - celá čísla)", min_value=0, value=0, step=1, key=f"prip_{st.session_state.reset_counter}")
             
             submitted = st.form_submit_button("➕ Přidat do zakázky", use_container_width=True)
