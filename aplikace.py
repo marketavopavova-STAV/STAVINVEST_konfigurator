@@ -128,7 +128,6 @@ with tab_kalk:
             st.session_state.zakazka = []; st.session_state.calc_done = False; st.rerun()
 
     with col_res:
-        st.markdown('<div style="margin-top: 5px;"></div>', unsafe_allow_html=True)
         st.subheader("Výpočet a Optimalizace")
         if st.session_state.zakazka:
             df_zak = pd.DataFrame(st.session_state.zakazka)
@@ -156,48 +155,31 @@ with tab_kalk:
                 bez_dph = r["c_mat"] + r["c_prace"] + r["c_prip"]
                 st.divider()
                 
-                # --- FINÁLNÍ PŘEHLEDNÁ TABULKA SOUHRNU ---
+                # --- NOVÝ PŘEHLEDNÝ SOUHRN POMOCÍ DATAFRAME ---
                 st.subheader("🧾 Souhrn kalkulace")
                 
-                # Příprava dat pro tabulku s formátováním čísel a zarovnáním
-                data_souhrn = {
-                    "Položka": [
-                        "Materiál", 
-                        "Práce / Ohyby", 
-                        "Atypické příplatky", 
-                        "CELKEM (bez DPH)", 
-                        "CELKEM (s DPH 21 %)"
-                    ],
-                    "Částka": [
-                        f"{r['c_mat']:,.2f} Kč",
-                        f"{r['c_prace']:,.2f} Kč",
-                        f"{r['c_prip']:,.2f} Kč",
-                        f"{bez_dph:,.2f} Kč",
-                        f"{bez_dph*1.21:,.2f} Kč"
+                # Vytvoření tabulky pro zobrazení
+                souhrn_data = {
+                    "Položka": ["Materiál", "Práce / Ohyby", "Atypické příplatky", "CELKEM (bez DPH)", "CELKEM (s DPH 21 %)"],
+                    "Částka (Kč)": [
+                        f"{r['c_mat']:,.2f}",
+                        f"{r['c_prace']:,.2f}",
+                        f"{r['c_prip']:,.2f}",
+                        f"{bez_dph:,.2f}",
+                        f"{bez_dph * 1.21:,.2f}"
                     ]
                 }
+                df_vysledek = pd.DataFrame(souhrn_data)
                 
-                df_souhrn = pd.DataFrame(data_souhrn)
+                # Zobrazení pomocí st.dataframe (čisté, zarovnané, funkční)
+                st.table(df_vysledek)
                 
-                # Zobrazení tabulky přes HTML pro přesné zarovnání doprava u čísel
-                html_table = df_souhrn.to_html(index=False, justify='right', classes='table table-striped')
-                # Úprava HTML pro vizuální zvýraznění posledních dvou řádků
-                html_table = html_table.replace('<thead>', '<thead style="background-color: #f0f2f6;">')
-                html_table = html_table.replace('<td>CELKEM', '<td style="font-weight: bold;">CELKEM')
-                
-                st.markdown(
-                    f"""
-                    <style>
-                        .report-table td {{ text-align: right; }}
-                        .report-table td:first-child {{ text-align: left; font-weight: 500; }}
-                        .total-row {{ font-weight: bold; font-size: 1.2em; background-color: #fff4f4; }}
-                    </style>
-                    <div class="report-table">
-                        {html_table}
-                    </div>
-                    """, 
-                    unsafe_allow_html=True
-                )
+                # Zvýraznění finální ceny velkým písmem pod tabulkou
+                st.write("")
+                col_fin1, col_fin2 = st.columns(2)
+                with col_fin2:
+                    st.write(f"**Celkem bez DPH:** {bez_dph:,.2f} Kč")
+                    st.markdown(f"### **K úhradě s DPH:** :red[{bez_dph * 1.21:,.2f} Kč]")
 
 # --- NÁKRESOVÁ ČÁST ---
 with tab_nakres:
