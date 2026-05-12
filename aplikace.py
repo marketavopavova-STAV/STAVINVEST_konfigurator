@@ -13,7 +13,7 @@ st.set_page_config(page_title="Konfigurátor Stavinvest", page_icon="✂️", la
 st.title("✂️ Konfigurátor Stavinvest")
 
 # ==========================================
-# MODULOVÝ PRUHOVÝ ALGORITMUS
+# MODULOVÝ PRUHOVÝ ALGORITMUS (BEZ ZMĚN)
 # ==========================================
 def pack_module_strips(items, coil_w, max_l, allow_rotation=True):
     best_modules = None
@@ -95,20 +95,15 @@ with tab_data:
     st.session_state.prvky_df = st.data_editor(st.session_state.prvky_df, num_rows="dynamic", key="ep")
 
 with tab_kalk:
-    # 1. OBECNÉ ÚDAJE (Nahoře)
     st.subheader("1. Obecné údaje")
     v_odberatel = st.text_input("Odběratel / Projekt", value=st.session_state.get('odberatel', ''))
     st.session_state.odberatel = v_odberatel
-    
     st.markdown("---")
 
-    # HLAVNÍ ROZLOŽENÍ SLOUPCŮ
     col_in, col_res = st.columns([1, 2])
     
     with col_in:
-        # Materiál je zpět v levém sloupci
         v_mat = st.selectbox("Materiál pro zakázku", list(mat_dict.keys()))
-        
         st.subheader("2. Přidat položku")
         v_prvek = st.selectbox("Typ prvku", list(prv_dict.keys()))
         default_ohyby = int(prv_dict[v_prvek]["Ohyby"])
@@ -133,58 +128,47 @@ with tab_kalk:
             st.session_state.zakazka = []; st.session_state.calc_done = False; st.rerun()
 
     with col_res:
-        # VIZUÁLNÍ VYROVNÁNÍ: Odsazení, aby pravý nadpis seděl s výběrem materiálu vlevo
         st.markdown('<div style="margin-top: 5px;"></div>', unsafe_allow_html=True)
-        
         st.subheader("Výpočet a Optimalizace")
         if st.session_state.zakazka:
             df_zak = pd.DataFrame(st.session_state.zakazka)
             df_zak.insert(0, 'Řádek', range(1, len(df_zak) + 1))
-            
             edited_df = st.data_editor(df_zak, hide_index=True, use_container_width=True, key="editor_zak")
             st.session_state.zakazka = edited_df.drop(columns=['Řádek']).to_dict('records')
             
             if st.button("🚀 SPOČÍTAT ZAKÁZKU", type="primary", use_container_width=True):
                 m_data = mat_dict[v_mat]; conf = st.session_state.config
                 items = []; c_prace = 0; c_prip = 0
-                
                 for idx, p in enumerate(st.session_state.zakazka):
                     c_prace += (p["Ohyby"] * conf["cena_ohyb"]) * p["Metrů"] * p["Kusů"]
                     c_prip += p.get("Atyp příplatek/ks (Kč)", 0.0) * p["Kusů"]
                     for _ in range(int(p["Kusů"])): 
                         items.append({"id": idx+1, "Prvek": p['Prvek'], "L": p['Metrů']*1000, "rš": p['RŠ (mm)']})
-
+                
                 bins = pack_module_strips(items, m_data["Šířka (mm)"], conf["max_delka"])
                 t_odvin = sum(b['odvinuto_mm'] for b in bins) / 1000
                 c_mat = (t_odvin * (m_data["Šířka (mm)"]/1000)) * m_data["Cena/m2"]
-                
-                st.session_state.res = {"c_mat": c_mat, "c_prace": c_prace, "c_prip": c_prip, "bins": bins}
+                st.session_state.res = {"c_mat": c_mat, "c_prace": c_prace, "c_prip": c_prip, "bins": bins, "w_coil": m_data["Šířka (mm)"]}
                 st.session_state.calc_done = True; st.rerun()
 
             if st.session_state.get('calc_done'):
-                r = st.session_state.res
-                bez_dph = r["c_mat"] + r["c_prace"] + r["c_prip"]
-                
+                r = st.session_state.res; bez_dph = r["c_mat"] + r["c_prace"] + r["c_prip"]
                 st.divider()
                 st.write("**Souhrn kalkulace (bez DPH):**")
-                m1, m2, m3 = st.columns(3)
-                m1.metric("Materiál", f"{r['c_mat']:,.2f} Kč")
-                m2.metric("Práce (Ohyby)", f"{r['c_prace']:,.2f} Kč")
-                m3.metric("Atyp. příplatky", f"{r['c_prip']:,.2f} Kč")
-                
-                st.write("**Celkové součty:**")
-                m4, m5 = st.columns(2)
-                m4.metric("CELKEM (bez DPH)", f"{bez_dph:,.2f}", delta_color="off")
-                m5.metric("CELKEM (s DPH 21%)", f"{bez_dph*1.21:,.2f}")
+                m1, m2, m3 = st.columns(3); m1.metric("Materiál", f"{r['c_mat']:,.2f} Kč"); m2.metric("Práce (Ohyby)", f"{r['c_prace']:,.2f} Kč"); m3.metric("Atyp. příplatky", f"{r['c_prip']:,.2f} Kč")
+                m4, m5 = st.columns(2); m4.metric("CELKEM (bez DPH)", f"{bez_dph:,.2f}", delta_color="off"); m5.metric("CELKEM (s DPH 21%)", f"{bez_dph*1.21:,.2f}")
 
-# --- NÁKRESOVÁ ČÁST ---
+# --- NÁKRESOVÁ ČÁST (VRÁCENA PLNÁ FUNKČNOST) ---
 with tab_nakres:
     if st.session_state.get('calc_done') and 'res' in st.session_state:
+        barvy = ['#3498db', '#e74c3c', '#2ecc71', '#f1c40f', '#9b59b6', '#e67e22', '#1abc9c']
         for i, b in enumerate(st.session_state.res['bins']):
-            fig, ax = plt.subplots(figsize=(10, 2.5))
+            fig, ax = plt.subplots(figsize=(10, 3))
             ax.add_patch(patches.Rectangle((0, 0), b['odvinuto_mm'], b['w_coil'], fill=False, edgecolor='black', lw=2))
             for p in b['placed']:
-                ax.add_patch(patches.Rectangle((p['x'], p['y']), p['draw_w'], p['draw_h'], facecolor='skyblue', edgecolor='black', alpha=0.8))
-                ax.text(p['x']+p['draw_w']/2, p['y']+p['draw_h']/2, f"Ř.{p['id']}\n{p['rš']}mm", ha='center', va='center', fontsize=7)
+                barva = barvy[(p['id'] - 1) % len(barvy)]
+                ax.add_patch(patches.Rectangle((p['x'], p['y']), p['draw_w'], p['draw_h'], facecolor=barva, edgecolor='black', alpha=0.7))
+                ax.text(p['x'] + p['draw_w']/2, p['y'] + p['draw_h']/2, f"Ř.{p['id']}\n{p['rš']}mm", ha='center', va='center', fontsize=8, color='black', weight='bold')
+            ax.set_xlim(0, b['odvinuto_mm'] * 1.05); ax.set_ylim(0, b['w_coil'] * 1.1)
             st.write(f"**Modul {i+1}:** Odvinout {b['odvinuto_mm']/1000:.2f} m")
             st.pyplot(fig)
