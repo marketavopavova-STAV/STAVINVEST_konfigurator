@@ -13,10 +13,9 @@ from openpyxl.utils import get_column_letter
 # --- NASTAVENÍ STRÁNKY ---
 st.set_page_config(page_title="Konfigurátor Stavinvest", page_icon="✂️", layout="wide")
 st.title("✂️ Konfigurátor Stavinvest")
-st.info("💡 **Nová funkce:** Rozvinutou šíři (RŠ) nyní zadáváte ručně v milimetrech pro každý prvek zvlášť.")
 
 # ==========================================
-# MODULOVÝ PRUHOVÝ ALGORITMUS (PRO PRŮBĚŽNÉ ŘEZY)
+# MODULOVÝ PRUHOVÝ ALGORITMUS
 # ==========================================
 def pack_module_strips(items, coil_w, max_l, allow_rotation=True):
     best_modules = None
@@ -126,14 +125,14 @@ if 'materialy_df' not in st.session_state:
         {"Materiál": "svitek POZINK 0,55x670mm", "Interní kód SI": "0160P002", "Šířka (mm)": 670, "Cena/m2": 218.0, "Max délka tabule (mm)": 50000},
         {"Materiál": "svitek POZINK 0,5x1250mm PES STANDARD BARVY O+SF", "Interní kód SI": "0160LP0107016O+SF", "Šířka (mm)": 1250, "Cena/m2": 282.0, "Max délka tabule (mm)": 50000},
         {"Materiál": "svitek POZINK 0,5x1250mm PES NESTANDARD O+SF", "Interní kód SI": "0160LP0109010O+SF", "Šířka (mm)": 1250, "Cena/m2": 301.0, "Max délka tabule (mm)": 50000},
-        {"Materiál": "Comax FALC POZINK 0,5x620mm PES šedá J+SF", "Interní kód SI": "0160LP0017016J+SF", "Šířka (mm)": 620, "Cena/m2": 456.0, "Max délka tabule (mm)": 50000},
+        {"Materiál": "Comax FALC POZINK 0,5x620mm PES  šedá J+SF", "Interní kód SI": "0160LP0017016J+SF", "Šířka (mm)": 620, "Cena/m2": 456.0, "Max délka tabule (mm)": 50000},
         {"Materiál": "svitek TITANZINEK 0,6x1000mm", "Interní kód SI": "0160T003", "Šířka (mm)": 1000, "Cena/m2": 611.0, "Max délka tabule (mm)": 50000},
         {"Materiál": "svitek TITANZINEK 0,6x670mm", "Interní kód SI": "0160T002", "Šířka (mm)": 670, "Cena/m2": 611.0, "Max délka tabule (mm)": 50000},
         {"Materiál": "svitek MĚĎ 0,55x1000mm", "Interní kód SI": "0160M011000", "Šířka (mm)": 1000, "Cena/m2": 2120.0, "Max délka tabule (mm)": 50000},
         {"Materiál": "svitek MĚĎ 0,55x670mm", "Interní kód SI": "0160M010670", "Šířka (mm)": 670, "Cena/m2": 2120.0, "Max délka tabule (mm)": 50000},
         {"Materiál": "PREFA svitek CLR 0,7x1000 PE", "Interní kód SI": "65P31105", "Šířka (mm)": 1000, "Cena/m2": 457.0, "Max délka tabule (mm)": 30000},
         {"Materiál": "PREFA svitek Prefalz 0,7x1000 hladký", "Interní kód SI": "65P40100", "Šířka (mm)": 1000, "Cena/m2": 578.0, "Max délka tabule (mm)": 30000},
-        {"Materiál": "PREFA svitek Prefalz 0,7x650 hladký", "Interní kód SI": "65P40200", "Šířka (mm)": 650, "Cena/m2": 578.0, "Max délka tabule (mm)": 50000},
+        {"Materiál": "PREFA svitek  Prefalz 0,7x650 hladký", "Interní kód SI": "65P40200", "Šířka (mm)": 650, "Cena/m2": 578.0, "Max délka tabule (mm)": 50000},
         {"Materiál": "Comax FALC AL 0,7x600mm", "Interní kód SI": "0160ALCO0706007016", "Šířka (mm)": 600, "Cena/m2": 622.0, "Max délka tabule (mm)": 50000},
         {"Materiál": "tabule AL 0,6x1000x2000 PES jednostranná s folií", "Interní kód SI": "0150AL06100020007016J+SF", "Šířka (mm)": 1000, "Cena/m2": 421.0, "Max délka tabule (mm)": 2000},
         {"Materiál": "tabule PVC 0,6x1000x2000 ROOFPLAN 7035", "Interní kód SI": "0150PVC0037035", "Šířka (mm)": 1000, "Cena/m2": 591.0, "Max délka tabule (mm)": 2000}
@@ -158,8 +157,17 @@ if 'prvky_df' not in st.session_state:
 if 'zakazka' not in st.session_state:
     st.session_state.zakazka = []
 
+if 'reset_counter' not in st.session_state:
+    st.session_state.reset_counter = 0
+
 mat_dict = {r["Materiál"]: r for _, r in st.session_state.materialy_df.iterrows()}
 prv_dict = {r["Typ prvku"]: r for _, r in st.session_state.prvky_df.iterrows()}
+
+# --- POMOCNÁ FUNKCE PRO FORMÁTOVÁNÍ ČÍSEL ---
+def fmt_cz(value):
+    parts = f"{value:,.2f}".split('.')
+    integer_part = parts[0].replace(',', ' ')
+    return f"{integer_part},{parts[1]}"
 
 # --- ZÁLOŽKY ---
 tab_kalk, tab_nakres, tab_data, tab_nastaveni = st.tabs(["🧮 Kalkulátor", "📐 Nákres 2D Řezů", "⚙️ Data (Ceník)", "🔧 Nastavení"])
@@ -173,7 +181,6 @@ with tab_nastaveni:
 
 with tab_data:
     st.header("⚙️ Správa dat (Ceník a materiály)")
-    st.write("Aplikace je plně odemčena pro úpravy ceníku i prvků.")
     st.session_state.materialy_df = st.data_editor(st.session_state.materialy_df, num_rows="dynamic", key="em", use_container_width=True)
     st.session_state.prvky_df = st.data_editor(st.session_state.prvky_df, num_rows="dynamic", key="ep", use_container_width=True)
 
@@ -182,50 +189,50 @@ with tab_data:
 # ==========================================
 with tab_kalk:
     
-    # --- 1. OBECNÉ ÚDAJE (PŘESUNUTO NAHORU PRO ZAROVNÁNÍ SLOUPCŮ NÍŽE) ---
+    # 1. OBECNÉ ÚDAJE (CELÁ ŠÍŘKA STRÁNKY)
     st.header("1. Obecné údaje")
-    col_top1, col_top2 = st.columns(2)
-    with col_top1:
-        v_odberatel = st.text_input("Odběratel / Název zakázky", st.session_state.get('odberatel', ''))
-        st.session_state.odberatel = v_odberatel
+    col_t1, col_t2 = st.columns(2)
+    with col_t1:
+        st.session_state.odberatel = st.text_input("Odběratel / Název zakázky", st.session_state.get('odberatel', ''))
         v_mat = st.selectbox("Materiál (pro celou zakázku)", list(mat_dict.keys()))
-    with col_top2:
+    with col_t2:
         st.write("**Parametry výroby:**")
         col_p1, col_p2 = st.columns(2)
         with col_p1:
-            st.session_state.config["max_delka"] = st.number_input("Délka ohýbačky (mm)", value=int(st.session_state.config["max_delka"]))
+            st.session_state.config["max_delka"] = st.number_input("Délka ohýbačky (mm)", value=int(st.session_state.config.get("max_delka", 4000)))
         with col_p2:
-            st.session_state.config["presah"] = st.number_input("Přesah spojů (mm)", value=int(st.session_state.config["presah"]))
-        st.session_state.config["povolit_rotaci"] = st.checkbox("🔄 Povolit otáčení dílů o 90°", value=st.session_state.config["povolit_rotaci"])
+            st.session_state.config["presah"] = st.number_input("Přesah spojů (mm)", value=int(st.session_state.config.get("presah", 40)))
+        st.session_state.config["povolit_rotaci"] = st.checkbox("🔄 Povolit otáčení dílů o 90°", value=st.session_state.config.get("povolit_rotaci", True))
         
     st.markdown("---")
 
-    # --- 2. PŘIDAT POLOŽKU A VÝPOČET (VEDLE SEBE) ---
+    # 2. PŘIDAT POLOŽKU A VÝPOČET (VEDLE SEBE)
     col_in, col_res = st.columns([1, 2])
     
     with col_in:
         st.header("2. Přidat položku")
         v_prvek = st.selectbox("Prvek", list(prv_dict.keys()))
-        
-        v_rs = st.number_input("Rozvinutá šíře - RŠ (mm)", value=250, min_value=10, step=1)
-        
         default_ohyby = int(prv_dict[v_prvek]["Ohyby"]) if v_prvek in prv_dict else 0
-        v_ohyby = st.number_input("Počet ohybů (lze upravit)", value=default_ohyby, min_value=0)
-        v_m = st.number_input("Délka (m)", value=2.5, step=0.1)
-        v_ks = st.number_input("Kusů", min_value=1, value=1)
-        v_priplatek = st.number_input("Atyp. příplatek/ks (Kč)", value=0.0, step=50.0)
         
-        if st.button("➕ Přidat do zakázky", type="primary", use_container_width=True):
-            st.session_state.zakazka.append({
-                "Prvek": v_prvek,
-                "RŠ (mm)": v_rs,
-                "Ohyby": v_ohyby,
-                "Metrů": v_m, 
-                "Kusů": v_ks,
-                "Atyp příplatek/ks (Kč)": v_priplatek
-            })
-            st.rerun()
+        with st.form("pridat_polozku_form", clear_on_submit=True):
+            v_rs = st.number_input("Rozvinutá šíře - RŠ (mm)", min_value=10, value=250, step=1)
+            v_ohyby = st.number_input("Počet ohybů", value=default_ohyby, min_value=0)
+            v_m = st.number_input("Délka (m)", value=2.5, step=0.1)
+            v_ks = st.number_input("Kusů", min_value=1, value=1)
+            v_priplatek = st.number_input("Atyp. příplatek/ks (Kč - celá čísla)", value=0, step=10)
             
+            submitted = st.form_submit_button("➕ Přidat do zakázky", use_container_width=True)
+            if submitted:
+                st.session_state.zakazka.append({
+                    "Prvek": v_prvek,
+                    "RŠ (mm)": v_rs,
+                    "Ohyby": v_ohyby,
+                    "Metrů": v_m, 
+                    "Kusů": v_ks,
+                    "Atyp příplatek/ks (Kč)": float(v_priplatek)
+                })
+                st.rerun()
+                
         if st.button("🗑️ Smazat vše", use_container_width=True):
             st.session_state.zakazka = []
             st.session_state.generated_figs = []
@@ -247,7 +254,7 @@ with tab_kalk:
                     "Ohyby": st.column_config.NumberColumn("Ohyby", min_value=0, step=1, required=True),
                     "Metrů": st.column_config.NumberColumn("Metrů", min_value=0.1, step=0.1, required=True),
                     "Kusů": st.column_config.NumberColumn("Kusů", min_value=1, step=1, required=True),
-                    "Atyp příplatek/ks (Kč)": st.column_config.NumberColumn("Atyp příplatek/ks (Kč)", min_value=0.0, step=10.0, required=True)
+                    "Atyp příplatek/ks (Kč)": st.column_config.NumberColumn("Atyp příplatek/ks (Kč)", min_value=0.0, step=1.0, required=True)
                 },
                 hide_index=True,
                 num_rows="dynamic",
@@ -262,3 +269,168 @@ with tab_kalk:
                 with st.spinner("🧠 Vytvářím výrobní moduly pro stroje a kreslím plány..."):
                     items = []
                     cena_prace = 0
+                    cena_priplatky = 0
+                    conf = st.session_state.config
+                    m_data = mat_dict[v_mat]
+                    
+                    for idx, p in enumerate(st.session_state.zakazka):
+                        row_id = idx + 1 
+                        L_mm = p["Metrů"] * 1000
+                        rs_mm = p["RŠ (mm)"]
+                        
+                        seg = 1 if L_mm <= conf["max_delka"] else math.ceil((L_mm - conf["presah"]) / (conf["max_delka"] - conf["presah"]))
+                        L_seg = (L_mm + (seg - 1) * conf["presah"]) / seg
+                        
+                        if conf["povolit_rotaci"]:
+                            vejde_se = (rs_mm <= m_data["Šířka (mm)"]) or \
+                                       (L_seg <= m_data["Šířka (mm)"] and rs_mm <= m_data["Max délka tabule (mm)"])
+                        else:
+                            vejde_se = (rs_mm <= m_data["Šířka (mm)"])
+                            
+                        if not vejde_se:
+                            st.error(f"CHYBA na řádku {row_id}: Prvek '{p['Prvek']}' s RŠ {rs_mm} mm je moc široký na materiál {v_mat}!")
+                            continue
+
+                        # SPRÁVNÝ VÝPOČET PRÁCE
+                        cena_prace += (p["Ohyby"] * conf["cena_ohyb"]) * p["Metrů"] * p["Kusů"]
+                        
+                        cena_priplatky += p.get("Atyp příplatek/ks (Kč)", 0.0) * p["Kusů"]
+                        
+                        for _ in range(int(p["Kusů"] * seg)):
+                            items.append({"id": row_id, "Prvek": p['Prvek'], "L": L_seg, "rš": rs_mm})
+
+                    if items:
+                        w_coil = m_data["Šířka (mm)"]
+                        cena_m2 = m_data["Cena/m2"]
+                        max_tab_len = min(m_data["Max délka tabule (mm)"], conf["max_delka"])
+                        
+                        bins = pack_module_strips(items, w_coil, max_tab_len, conf["povolit_rotaci"])
+                        
+                        tot_odvinuto = 0; tot_plocha = 0; tot_cena_mat = 0
+                        for b in bins:
+                            odvinuto_m = b['odvinuto_mm'] / 1000
+                            plocha_m2 = odvinuto_m * (w_coil / 1000)
+                            
+                            tot_odvinuto += odvinuto_m
+                            tot_plocha += plocha_m2
+                            tot_cena_mat += plocha_m2 * cena_m2
+                            
+                        sumar = {
+                            "Počet Modulů (ks)": len(bins), 
+                            "Celkem odvinout (m)": tot_odvinuto, 
+                            "Plocha (m2)": tot_plocha, 
+                            "Cena materiálu (bez DPH):": tot_cena_mat
+                        }
+                        
+                        st.session_state.sumar = sumar
+                        st.session_state.cena_prace = cena_prace
+                        st.session_state.cena_priplatky = cena_priplatky
+                        st.session_state.c_mat = tot_cena_mat
+                        st.session_state.v_mat = v_mat
+                        
+                        # KRESLENÍ OBRÁZKŮ DO SESSION STATE
+                        figs = []
+                        barvy = ['#3498db', '#e74c3c', '#2ecc71', '#f1c40f', '#9b59b6', '#e67e22', '#1abc9c', '#34495e', '#16a085', '#27ae60', '#8e44ad', '#f39c12', '#d35400', '#c0392b']
+                        for i, b in enumerate(bins):
+                            odvinuto_mm = b['odvinuto_mm']
+                            fig, ax = plt.subplots(figsize=(12, 2.5))
+                            ax.add_patch(patches.Rectangle((0, 0), odvinuto_mm, w_coil, fill=False, edgecolor='black', linewidth=2))
+                            for p in b['placed']:
+                                color = barvy[(p['id'] - 1) % len(barvy)] 
+                                ax.add_patch(patches.Rectangle((p['x'], p['y']), p['draw_w'], p['draw_h'], facecolor=color, edgecolor='black', alpha=0.8))
+                                font_size = 8 if p['draw_w'] > 500 else 6
+                                rotace_text = " ↻" if p.get('rotated') else ""
+                                ax.text(p['x'] + p['draw_w']/2, p['y'] + p['draw_h']/2, f"Ř.{p['id']} {p['Prvek']}\n({p['L']:.0f}x{p['rš']}){rotace_text}", 
+                                        ha='center', va='center', fontsize=font_size, color='white', weight='bold')
+                            osa_x_max = max(max_tab_len, 100) 
+                            ax.set_xlim(0, osa_x_max * 1.02)
+                            ax.set_ylim(0, w_coil * 1.05)
+                            ax.set_xlabel("Délka modulu (mm)")
+                            ax.set_ylabel("Šířka materiálu (mm)")
+                            ax.set_title(f"Modul {i+1}: Odvinout/Ustřihnout {odvinuto_mm/1000:.2f} m")
+                            figs.append((b, fig))
+                        
+                        st.session_state.generated_figs = figs
+                        st.session_state.calc_done = True
+
+            if st.session_state.get('calc_done', False):
+                st.divider()
+                st.subheader("🧾 Souhrnná kalkulace")
+                
+                c_mat = float(st.session_state.c_mat)
+                cena_prace = float(st.session_state.cena_prace)
+                cena_priplatky = float(st.session_state.get('cena_priplatky', 0))
+                total_bez = c_mat + cena_prace + cena_priplatky
+                total_s = total_bez * 1.21
+
+                # STABILNÍ MARKDOWN TABULKA (Zarovnaná doprava, tučně vyznačené součty)
+                md_table = f"""
+| Položka | Částka (Kč) |
+| :--- | ---: |
+| Materiál (bez DPH): | {fmt_cz(c_mat)} |
+| Práce / Ohyby (bez DPH): | {fmt_cz(cena_prace)} |
+| Atypické příplatky (bez DPH): | {fmt_cz(cena_priplatky)} |
+| <span style="font-size: 1.1em; color: #333;">**CELKEM (bez DPH):**</span> | <span style="font-size: 1.1em; color: #333;">**{fmt_cz(total_bez)}**</span> |
+| <span style="font-size: 1.3em; color: #D32F2F;">**CELKEM (s DPH 21 %):**</span> | <span style="font-size: 1.3em; color: #D32F2F;">**{fmt_cz(total_s)}**</span> |
+"""
+                st.markdown(md_table, unsafe_allow_html=True)
+
+                # EXCEL EXPORT
+                buf = io.BytesIO()
+                with pd.ExcelWriter(buf, engine='openpyxl') as wr:
+                    info_df = pd.DataFrame([
+                        {"Parametr": "Odběratel / Zakázka", "Hodnota": st.session_state.odberatel},
+                        {"Parametr": "Materiál", "Hodnota": st.session_state.v_mat}
+                    ])
+                    info_df.to_excel(wr, sheet_name='Zadání', index=False, startrow=0)
+                    
+                    df_out = pd.DataFrame(st.session_state.zakazka)
+                    df_out.insert(0, 'Řádek', range(1, len(df_out) + 1))
+                    df_out.to_excel(wr, sheet_name='Zadání', index=False, startrow=4)
+                    
+                    pd.DataFrame.from_dict(st.session_state.sumar, orient='index').to_excel(wr, sheet_name='Souhrn_Materiálu')
+                    
+                    wb = wr.book
+                    for sheet_name in ['Zadání', 'Souhrn_Materiálu']:
+                        ws = wr.sheets[sheet_name]
+                        for col in ws.columns:
+                            max_length = 0
+                            column_letter = col[0].column_letter
+                            for cell in col:
+                                try:
+                                    if cell.value:
+                                        max_length = max(max_length, len(str(cell.value)))
+                                except:
+                                    pass
+                            adjusted_width = (max_length + 2)
+                            ws.column_dimensions[column_letter].width = adjusted_width
+                    
+                    if st.session_state.get('generated_figs'):
+                        ws_img = wb.create_sheet('Výrobní nákresy')
+                        ws_img.column_dimensions['A'].width = 50 
+                        
+                        row_offset = 1
+                        for idx, (b, fig) in enumerate(st.session_state.generated_figs):
+                            ws_img.cell(row=row_offset, column=1, value=f"Modul {idx+1}: Odvinout {b['odvinuto_mm']/1000:.2f} m")
+                            row_offset += 1
+                            img_data = io.BytesIO()
+                            fig.savefig(img_data, format='png', bbox_inches='tight', dpi=100)
+                            img_data.seek(0)
+                            img = xlImage(img_data)
+                            ws_img.add_image(img, f"A{row_offset}")
+                            row_offset += 18 
+                        
+                st.download_button("📥 Stáhnout Excel vč. Nákresů", buf.getvalue(), "Kalkulace_a_vyroba.xlsx", use_container_width=True)
+
+# ==========================================
+# ZÁLOŽKA: NÁKRES
+# ==========================================
+with tab_nakres:
+    st.header("📐 Výrobní plány pro stroje")
+    if st.session_state.get('calc_done') and st.session_state.get('generated_figs'):
+        for i, (b, fig) in enumerate(st.session_state.generated_figs):
+            st.write(f"**Modul {i+1}:** Odvinout/Ustřihnout napříč na **{b['odvinuto_mm'] / 1000:.2f} m**")
+            st.pyplot(fig)
+            st.divider()
+    else:
+        st.info("Nejdříve proveďte výpočet v záložce Kalkulátor.")
