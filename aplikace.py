@@ -104,14 +104,13 @@ with tab_kalk:
         v_mat = st.selectbox("Materiál", list(mat_dict.keys()))
         
         st.markdown("---")
+        # --- ZDE ZAČÍNÁ SEKCE 2 ---
         st.subheader("2. Přidat položku")
         
-        # Klíčový prvek: Výběr typu výrobku resetuje formulář na výchozí hodnoty ohybů
         v_prvek = st.selectbox("Prvek", list(prv_dict.keys()))
         default_ohyby = int(prv_dict[v_prvek]["Ohyby"])
         
         with st.form("pridat_polozku_form", clear_on_submit=True):
-            # Ostatní pole se nulují díky reset_counter, ale ohyby berou vždy default z tabulky
             f_rs = st.number_input("Rozvinutá šíře - RŠ (mm)", min_value=10, value=250, step=1, key=f"rs_{st.session_state.reset_counter}")
             f_ohyby = st.number_input("Počet ohybů", value=default_ohyby, min_value=0, key=f"ohyby_{v_prvek}_{st.session_state.reset_counter}")
             f_m = st.number_input("Délka (m)", value=2.5, step=0.1, key=f"m_{st.session_state.reset_counter}")
@@ -131,8 +130,10 @@ with tab_kalk:
             st.session_state.zakazka = []; st.session_state.calc_done = False; st.rerun()
 
     with col_res:
-        # Vizuální posun dolů
-        for _ in range(7): st.write("")
+        # VIZUÁLNÍ VYROVNÁNÍ: Posuneme pravou stranu dolů tak, aby subheader "Výpočet" 
+        # byl na úrovni levého subheaderu "2. Přidat položku"
+        # 165px je přibližná výška sekce "1. Obecné údaje"
+        st.markdown('<div style="margin-top: 165px;"></div>', unsafe_allow_html=True)
         
         st.subheader("Výpočet a Optimalizace")
         if st.session_state.zakazka:
@@ -172,8 +173,8 @@ with tab_kalk:
                 
                 st.write("**Celkové součty:**")
                 m4, m5 = st.columns(2)
-                m4.metric("CELKEM (bez DPH)", f"{bez_dph:,.2f} Kč")
-                m5.metric("CELKEM (s DPH 21%)", f"{bez_dph*1.21:,.2f} Kč")
+                m4.metric("CELKEM (bez DPH)", f"{bez_dph:,.2f}", delta_color="off")
+                m5.metric("CELKEM (s DPH 21%)", f"{bez_dph*1.21:,.2f}")
 
 # --- NÁKRESOVÁ ČÁST ---
 with tab_nakres:
