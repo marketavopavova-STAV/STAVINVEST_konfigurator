@@ -95,23 +95,22 @@ with tab_data:
     st.session_state.prvky_df = st.data_editor(st.session_state.prvky_df, num_rows="dynamic", key="ep")
 
 with tab_kalk:
-    # --- 1. OBECNÉ ÚDAJE (NA CELOU ŠÍŘKU) ---
+    # 1. OBECNÉ ÚDAJE (Nahoře)
     st.subheader("1. Obecné údaje")
-    c1, c2 = st.columns(2)
-    with c1:
-        v_odberatel = st.text_input("Odběratel / Projekt", value=st.session_state.get('odberatel', ''))
-        st.session_state.odberatel = v_odberatel
-    with c2:
-        v_mat = st.selectbox("Materiál", list(mat_dict.keys()))
+    v_odberatel = st.text_input("Odběratel / Projekt", value=st.session_state.get('odberatel', ''))
+    st.session_state.odberatel = v_odberatel
     
     st.markdown("---")
-    
-    # --- SLOUPEČKY PRO SEKCI 2 A VÝPOČET (ZAROVNANÉ) ---
+
+    # HLAVNÍ ROZLOŽENÍ SLOUPCŮ
     col_in, col_res = st.columns([1, 2])
     
     with col_in:
+        # Materiál je zpět v levém sloupci
+        v_mat = st.selectbox("Materiál pro zakázku", list(mat_dict.keys()))
+        
         st.subheader("2. Přidat položku")
-        v_prvek = st.selectbox("Prvek", list(prv_dict.keys()))
+        v_prvek = st.selectbox("Typ prvku", list(prv_dict.keys()))
         default_ohyby = int(prv_dict[v_prvek]["Ohyby"])
         
         with st.form("pridat_polozku_form", clear_on_submit=True):
@@ -134,7 +133,9 @@ with tab_kalk:
             st.session_state.zakazka = []; st.session_state.calc_done = False; st.rerun()
 
     with col_res:
-        # Nadpis začíná přesně ve stejné výšce jako "2. Přidat položku"
+        # VIZUÁLNÍ VYROVNÁNÍ: Odsazení, aby pravý nadpis seděl s výběrem materiálu vlevo
+        st.markdown('<div style="margin-top: 5px;"></div>', unsafe_allow_html=True)
+        
         st.subheader("Výpočet a Optimalizace")
         if st.session_state.zakazka:
             df_zak = pd.DataFrame(st.session_state.zakazka)
@@ -168,9 +169,10 @@ with tab_kalk:
                 st.write("**Souhrn kalkulace (bez DPH):**")
                 m1, m2, m3 = st.columns(3)
                 m1.metric("Materiál", f"{r['c_mat']:,.2f} Kč")
-                m2.metric("Práce", f"{r['c_prace']:,.2f} Kč")
+                m2.metric("Práce (Ohyby)", f"{r['c_prace']:,.2f} Kč")
                 m3.metric("Atyp. příplatky", f"{r['c_prip']:,.2f} Kč")
                 
+                st.write("**Celkové součty:**")
                 m4, m5 = st.columns(2)
                 m4.metric("CELKEM (bez DPH)", f"{bez_dph:,.2f}", delta_color="off")
                 m5.metric("CELKEM (s DPH 21%)", f"{bez_dph*1.21:,.2f}")
