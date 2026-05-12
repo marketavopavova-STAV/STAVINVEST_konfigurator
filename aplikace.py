@@ -64,7 +64,7 @@ def pack_module_strips(items, coil_w, max_l, allow_rotation=True):
             formatted_bins.append({'w_coil': coil_w, 'odvinuto_mm': m['l'], 'placed': placed})
     return formatted_bins
 
-# --- DATA (KOMPLETNÍ SEZNAMY) ---
+# --- DATA (KOMPLETNÍ SEZNAMY MATERIÁLŮ) ---
 if 'materialy_df' not in st.session_state:
     st.session_state.materialy_df = pd.DataFrame([
         {"Materiál": "svitek POZINK 0,55x1000mm", "Interní kód SI": "0160P003", "Šířka (mm)": 1000, "Cena/m2": 200.0, "Max délka": 50000},
@@ -84,6 +84,7 @@ if 'materialy_df' not in st.session_state:
         {"Materiál": "tabule PVC 0,6x1000x2000 ROOFPLAN 7035", "Interní kód SI": "0150PVC0037035", "Šířka (mm)": 1000, "Cena/m2": 591.0, "Max délka": 2000}
     ])
 
+# --- DATA (KOMPLETNÍ SEZNAMY PRVKŮ) ---
 if 'prvky_df' not in st.session_state:
     st.session_state.prvky_df = pd.DataFrame([
         {"Typ prvku": "Závětrná lišta spodní", "Ohyby": 6},
@@ -101,7 +102,7 @@ if 'prvky_df' not in st.session_state:
     ])
 
 if 'zakazka' not in st.session_state: st.session_state.zakazka = []
-if 'config' not in st.session_state: st.session_state.config = {"cena_ohyb": 10.0, "max_delka": 4000}
+if 'config' not in st.session_state: st.session_state.config = {"cena_ohyb": 10.0, "max_delka": 4000, "presah": 50}
 if 'reset_counter' not in st.session_state: st.session_state.reset_counter = 0
 
 mat_dict = {r["Materiál"]: r for _, r in st.session_state.materialy_df.iterrows()}
@@ -115,8 +116,14 @@ with tab_data:
 
 with tab_kalk:
     st.subheader("1. Obecné údaje")
-    v_odberatel = st.text_input("Odběratel / Projekt", value=st.session_state.get('odberatel', ''))
-    st.session_state.odberatel = v_odberatel
+    col_inf1, col_inf2, col_inf3 = st.columns(3)
+    with col_inf1:
+        st.session_state.odberatel = st.text_input("Odběratel / Projekt", value=st.session_state.get('odberatel', ''))
+    with col_inf2:
+        st.session_state.config["max_delka"] = st.number_input("Max. délka ohýbačky (mm)", value=st.session_state.config["max_delka"])
+    with col_inf3:
+        st.session_state.config["presah"] = st.number_input("Přesah spojů (mm)", value=st.session_state.config["presah"])
+    
     st.markdown("---")
 
     col_in, col_res = st.columns([1, 2])
@@ -161,7 +168,7 @@ with tab_kalk:
                     c_prace += (p["Ohyby"] * conf["cena_ohyb"]) * p["Metrů"] * p["Kusů"]
                     c_prip += p.get("Atyp příplatek/ks (Kč)", 0.0) * p["Kusů"]
                     for _ in range(int(p["Kusů"])): 
-                        items.append({"id": idx+1, "Prvek": p['Prvek'], "L": p['Metrů']*1000, "rš": p['RŠ (mm)']})
+                        items.append({"id": idx+1, "Prvek": p['Prvek'], "L": (p['Metrů']*1000) + conf["presah"], "rš": p['RŠ (mm)']})
                 
                 bins = pack_module_strips(items, m_data["Šířka (mm)"], conf["max_delka"])
                 t_odvin = sum(b['odvinuto_mm'] for b in bins) / 1000
