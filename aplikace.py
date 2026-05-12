@@ -156,26 +156,48 @@ with tab_kalk:
                 bez_dph = r["c_mat"] + r["c_prace"] + r["c_prip"]
                 st.divider()
                 
-                # --- KOMPAKTNÍ VÝSLEDKOVÁ TABULKA ---
+                # --- FINÁLNÍ PŘEHLEDNÁ TABULKA SOUHRNU ---
                 st.subheader("🧾 Souhrn kalkulace")
                 
-                # Tabulka s položkami
-                souhrn_df = pd.DataFrame([
-                    {"Položka": "Materiál", "Cena bez DPH": f"{r['c_mat']:,.2f} Kč"},
-                    {"Položka": "Práce / Ohyby", "Cena bez DPH": f"{r['c_prace']:,.2f} Kč"},
-                    {"Položka": "Atypické příplatky", "Cena bez DPH": f"{r['c_prip']:,.2f} Kč"}
-                ])
-                st.table(souhrn_df)
+                # Příprava dat pro tabulku s formátováním čísel a zarovnáním
+                data_souhrn = {
+                    "Položka": [
+                        "Materiál", 
+                        "Práce / Ohyby", 
+                        "Atypické příplatky", 
+                        "CELKEM (bez DPH)", 
+                        "CELKEM (s DPH 21 %)"
+                    ],
+                    "Částka": [
+                        f"{r['c_mat']:,.2f} Kč",
+                        f"{r['c_prace']:,.2f} Kč",
+                        f"{r['c_prip']:,.2f} Kč",
+                        f"{bez_dph:,.2f} Kč",
+                        f"{bez_dph*1.21:,.2f} Kč"
+                    ]
+                }
                 
-                # Finální sumy
-                st.write("")
-                cx1, cx2 = st.columns(2)
-                with cx1:
-                    st.markdown(f"<div style='text-align: right; color: gray; font-size: 18px;'>Celkem bez DPH:</div>", unsafe_allow_html=True)
-                    st.markdown(f"<div style='text-align: right; font-size: 28px; font-weight: bold;'>{bez_dph:,.2f} Kč</div>", unsafe_allow_html=True)
-                with cx2:
-                    st.markdown(f"<div style='text-align: left; color: #D32F2F; font-size: 18px; font-weight: bold;'>CELKEM s DPH 21 %:</div>", unsafe_allow_html=True)
-                    st.markdown(f"<div style='text-align: left; font-size: 32px; font-weight: bold; color: #D32F2F;'>{bez_dph*1.21:,.2f} Kč</div>", unsafe_allow_html=True)
+                df_souhrn = pd.DataFrame(data_souhrn)
+                
+                # Zobrazení tabulky přes HTML pro přesné zarovnání doprava u čísel
+                html_table = df_souhrn.to_html(index=False, justify='right', classes='table table-striped')
+                # Úprava HTML pro vizuální zvýraznění posledních dvou řádků
+                html_table = html_table.replace('<thead>', '<thead style="background-color: #f0f2f6;">')
+                html_table = html_table.replace('<td>CELKEM', '<td style="font-weight: bold;">CELKEM')
+                
+                st.markdown(
+                    f"""
+                    <style>
+                        .report-table td {{ text-align: right; }}
+                        .report-table td:first-child {{ text-align: left; font-weight: 500; }}
+                        .total-row {{ font-weight: bold; font-size: 1.2em; background-color: #fff4f4; }}
+                    </style>
+                    <div class="report-table">
+                        {html_table}
+                    </div>
+                    """, 
+                    unsafe_allow_html=True
+                )
 
 # --- NÁKRESOVÁ ČÁST ---
 with tab_nakres:
