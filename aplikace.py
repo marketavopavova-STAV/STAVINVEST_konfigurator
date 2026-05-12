@@ -104,7 +104,7 @@ with tab_kalk:
         v_mat = st.selectbox("Materiál", list(mat_dict.keys()))
         
         st.markdown("---")
-        # --- ZDE ZAČÍNÁ SEKCE 2 ---
+        # Začátek sekce 2
         st.subheader("2. Přidat položku")
         
         v_prvek = st.selectbox("Prvek", list(prv_dict.keys()))
@@ -130,10 +130,8 @@ with tab_kalk:
             st.session_state.zakazka = []; st.session_state.calc_done = False; st.rerun()
 
     with col_res:
-        # VIZUÁLNÍ VYROVNÁNÍ: Posuneme pravou stranu dolů tak, aby subheader "Výpočet" 
-        # byl na úrovni levého subheaderu "2. Přidat položku"
-        # 165px je přibližná výška sekce "1. Obecné údaje"
-        st.markdown('<div style="margin-top: 165px;"></div>', unsafe_allow_html=True)
+        # Pevný vizuální posun pomocí prázdného HTML bloku s výškou
+        st.markdown('<div style="height: 185px;"></div>', unsafe_allow_html=True)
         
         st.subheader("Výpočet a Optimalizace")
         if st.session_state.zakazka:
