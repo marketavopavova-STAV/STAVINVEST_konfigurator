@@ -156,31 +156,26 @@ with tab_kalk:
                 bez_dph = r["c_mat"] + r["c_prace"] + r["c_prip"]
                 st.divider()
                 
-                # --- ESTETICKÝ SOUHRN ---
-                st.markdown("### 🧾 Souhrnná kalkulace")
+                # --- KOMPAKTNÍ VÝSLEDKOVÁ TABULKA ---
+                st.subheader("🧾 Souhrn kalkulace")
                 
-                # Horní řada - menší písmo
-                c1, c2, c3 = st.columns(3)
-                with c1:
-                    st.caption("Materiál (bez DPH)")
-                    st.markdown(f"#### {r['c_mat']:,.2f} Kč")
-                with c2:
-                    st.caption("Práce / Ohyby (bez DPH)")
-                    st.markdown(f"#### {r['c_prace']:,.2f} Kč")
-                with c3:
-                    st.caption("Atypické příplatky (bez DPH)")
-                    st.markdown(f"#### {r['c_prip']:,.2f} Kč")
+                # Tabulka s položkami
+                souhrn_df = pd.DataFrame([
+                    {"Položka": "Materiál", "Cena bez DPH": f"{r['c_mat']:,.2f} Kč"},
+                    {"Položka": "Práce / Ohyby", "Cena bez DPH": f"{r['c_prace']:,.2f} Kč"},
+                    {"Položka": "Atypické příplatky", "Cena bez DPH": f"{r['c_prip']:,.2f} Kč"}
+                ])
+                st.table(souhrn_df)
                 
-                st.write("") # Mezera
-                
-                # Dolní řada - velké písmo pro celkové sumy
-                c4, c5 = st.columns(2)
-                with c4:
-                    st.markdown(f"<p style='margin-bottom:-10px; color:gray;'>CELKEM (bez DPH)</p>", unsafe_allow_html=True)
-                    st.markdown(f"## {bez_dph:,.2f} Kč")
-                with c5:
-                    st.markdown(f"<p style='margin-bottom:-10px; color:#D32F2F; font-weight:bold;'>CELKEM (s DPH 21 %)</p>", unsafe_allow_html=True)
-                    st.markdown(f"<h2 style='color:#D32F2F;'>{bez_dph*1.21:,.2f} Kč</h2>", unsafe_allow_html=True)
+                # Finální sumy
+                st.write("")
+                cx1, cx2 = st.columns(2)
+                with cx1:
+                    st.markdown(f"<div style='text-align: right; color: gray; font-size: 18px;'>Celkem bez DPH:</div>", unsafe_allow_html=True)
+                    st.markdown(f"<div style='text-align: right; font-size: 28px; font-weight: bold;'>{bez_dph:,.2f} Kč</div>", unsafe_allow_html=True)
+                with cx2:
+                    st.markdown(f"<div style='text-align: left; color: #D32F2F; font-size: 18px; font-weight: bold;'>CELKEM s DPH 21 %:</div>", unsafe_allow_html=True)
+                    st.markdown(f"<div style='text-align: left; font-size: 32px; font-weight: bold; color: #D32F2F;'>{bez_dph*1.21:,.2f} Kč</div>", unsafe_allow_html=True)
 
 # --- NÁKRESOVÁ ČÁST ---
 with tab_nakres:
