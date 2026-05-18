@@ -12,6 +12,57 @@ from openpyxl.utils import get_column_letter
 
 # --- NASTAVENÍ STRÁNKY ---
 st.set_page_config(page_title="Konfigurátor Stavinvest", page_icon="✂️", layout="wide")
+
+# ==========================================
+# 🔒 PŘIHLAŠOVACÍ ÚDAJE (Kreativní klempířská hesla)
+# ==========================================
+UZIVATELE = {
+    "admin@stavinvest.cz": "HlavniKlempir!",
+    "test1@stavinvest.cz": "PlechovaStrecha1",
+    "test2@stavinvest.cz": "Okapnice2026",
+    "test3@stavinvest.cz": "TitanzinekRulez",
+    "test4@stavinvest.cz": "FalcujemeDobre",
+    "test5@stavinvest.cz": "OhybackaStroj",
+    "test6@stavinvest.cz": "SvitekPlechu99",
+    "test7@stavinvest.cz": "KlempiroveCZ",
+    "test8@stavinvest.cz": "ZavetrnaLista#",
+    "test9@stavinvest.cz": "StavinvestPro",
+    "test10@stavinvest.cz": "NuzkyNaPlech123"
+}
+
+if 'logged_in' not in st.session_state:
+    st.session_state.logged_in = False
+    st.session_state.current_user = ""
+
+if not st.session_state.logged_in:
+    st.markdown("<br><br>", unsafe_allow_html=True)
+    col1, col2, col3 = st.columns([1, 1, 1])
+    with col2:
+        st.markdown("<h2 style='text-align: center;'>🔒 Přihlášení do systému</h2>", unsafe_allow_html=True)
+        with st.form("login_form"):
+            email = st.text_input("E-mail")
+            password = st.text_input("Heslo", type="password")
+            submit = st.form_submit_button("Přihlásit se", use_container_width=True)
+
+            if submit:
+                if email in UZIVATELE and UZIVATELE[email] == password:
+                    st.session_state.logged_in = True
+                    st.session_state.current_user = email
+                    st.rerun()
+                else:
+                    st.error("Chybný e-mail nebo heslo!")
+    st.stop()
+
+# --- BOČNÍ PANEL (Odhlášení) ---
+st.sidebar.write(f"👤 Přihlášen(a): **{st.session_state.current_user}**")
+if st.sidebar.button("🚪 Odhlásit se", use_container_width=True):
+    st.session_state.logged_in = False
+    st.session_state.current_user = ""
+    st.rerun()
+
+# ==========================================
+# HLAVNÍ APLIKACE
+# ==========================================
 st.title("✂️ Konfigurátor Stavinvest")
 
 # ==========================================
@@ -181,8 +232,15 @@ with tab_nastaveni:
 
 with tab_data:
     st.header("⚙️ Správa dat (Ceník a materiály)")
-    st.session_state.materialy_df = st.data_editor(st.session_state.materialy_df, num_rows="dynamic", key="em", use_container_width=True)
-    st.session_state.prvky_df = st.data_editor(st.session_state.prvky_df, num_rows="dynamic", key="ep", use_container_width=True)
+    # Omezení práv pouze na administrátora pro tabulku dat
+    if st.session_state.current_user == "admin@stavinvest.cz":
+        st.write("Jako administrátor můžete upravovat ceny a materiály. (Pozn.: Změny platí do restartu aplikace.)")
+        st.session_state.materialy_df = st.data_editor(st.session_state.materialy_df, num_rows="dynamic", key="em", use_container_width=True)
+        st.session_state.prvky_df = st.data_editor(st.session_state.prvky_df, num_rows="dynamic", key="ep", use_container_width=True)
+    else:
+        st.warning("Pohled pro čtení. Úpravy ceníku může provádět pouze administrátor.")
+        st.dataframe(st.session_state.materialy_df, use_container_width=True)
+        st.dataframe(st.session_state.prvky_df, use_container_width=True)
 
 # ==========================================
 # ZÁLOŽKA: KALKULÁTOR
@@ -291,7 +349,7 @@ with tab_kalk:
                             st.error(f"CHYBA na řádku {row_id}: Prvek '{p['Prvek']}' s RŠ {rs_mm} mm je moc široký na materiál {v_mat}!")
                             continue
 
-                        # SPRÁVNÝ VÝPOČET PRÁCE
+                        # SPRÁVNÝ VÝPOČET PRÁCE: ohyby * cena za ohyb * Metry * Kusy
                         cena_prace += (p["Ohyby"] * conf["cena_ohyb"]) * p["Metrů"] * p["Kusů"]
                         
                         cena_priplatky += p.get("Atyp příplatek/ks (Kč)", 0.0) * p["Kusů"]
