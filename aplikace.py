@@ -492,3 +492,4 @@ with tab_nakres:
             st.divider()
     else:
         st.info("Nejdříve proveďte výpočet v záložce Kalkulátor.")
+        
