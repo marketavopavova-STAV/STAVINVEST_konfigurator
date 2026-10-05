@@ -4,8 +4,6 @@ import math
 import io
 import copy
 import random
-import json
-import os
 from collections import defaultdict
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
@@ -61,68 +59,6 @@ if st.sidebar.button("🚪 Odhlásit se", use_container_width=True):
     st.session_state.logged_in = False
     st.session_state.current_user = ""
     st.rerun()
-
-# ==========================================
-# TRVALÉ NAČÍTÁNÍ A UKLÁDÁNÍ DAT (SOUBOR NA DISKU)
-# ==========================================
-DB_FILE = "materialy_db.json"
-PRVKY_FILE = "prvky_db.json"
-
-DEFAULT_MATERIALY = [
-    {"Materiál": "svitek POZINK 0,55x1000mm", "Interní kód SI": "0160P003", "Šířka (mm)": 1000, "Cena/m2": 200.0, "Max délka tabule (mm)": 50000},
-    {"Materiál": "svitek POZINK 0,55x670mm", "Interní kód SI": "0160P002", "Šířka (mm)": 670, "Cena/m2": 218.0, "Max délka tabule (mm)": 50000},
-    {"Materiál": "svitek POZINK 0,5x1250mm PES STANDARD BARVY O+SF", "Interní kód SI": "0160LP0107016O+SF", "Šířka (mm)": 1250, "Cena/m2": 282.0, "Max délka tabule (mm)": 50000},
-    {"Materiál": "svitek POZINK 0,5x1250mm PES NESTANDARD O+SF", "Interní kód SI": "0160LP0109010O+SF", "Šířka (mm)": 1250, "Cena/m2": 301.0, "Max délka tabule (mm)": 50000},
-    {"Materiál": "Comax FALC POZINK 0,5x620mm PES  šedá J+SF", "Interní kód SI": "0160LP0017016J+SF", "Šířka (mm)": 620, "Cena/m2": 456.0, "Max délka tabule (mm)": 50000},
-    {"Materiál": "svitek TITANZINEK 0,6x1000mm", "Interní kód SI": "0160T003", "Šířka (mm)": 1000, "Cena/m2": 672.0, "Max délka tabule (mm)": 50000},
-    {"Materiál": "svitek TITANZINEK 0,6x670mm", "Interní kód SI": "0160T002", "Šířka (mm)": 670, "Cena/m2": 672.0, "Max délka tabule (mm)": 50000},
-    {"Materiál": "svitek MĚĎ 0,55x1000mm", "Interní kód SI": "0160M011000", "Šířka (mm)": 1000, "Cena/m2": 2347.0, "Max délka tabule (mm)": 50000},
-    {"Materiál": "svitek MĚĎ 0,55x670mm", "Interní kód SI": "0160M010670", "Šířka (mm)": 670, "Cena/m2": 2347.0, "Max délka tabule (mm)": 50000},
-    {"Materiál": "PREFA svitek CLR 0,7x1000 PE", "Interní kód SI": "65P31105", "Šířka (mm)": 1000, "Cena/m2": 490.0, "Max délka tabule (mm)": 30000},
-    {"Materiál": "PREFA svitek Prefalz 0,7x1000 hladký", "Interní kód SI": "65P40100", "Šířka (mm)": 1000, "Cena/m2": 619.0, "Max délka tabule (mm)": 30000},
-    {"Materiál": "PREFA svitek  Prefalz 0,7x650 hladký", "Interní kód SI": "65P40200", "Šířka (mm)": 650, "Cena/m2": 619.0, "Max délka tabule (mm)": 50000},
-    {"Materiál": "Comax FALC AL 0,7x600mm", "Interní kód SI": "0160ALCO0706007016", "Šířka (mm)": 600, "Cena/m2": 694.0, "Max délka tabule (mm)": 50000},
-    {"Materiál": "tabule AL 0,6x1000x2000 PES jednostranná s folií", "Interní kód SI": "0150AL06100020007016J+SF", "Šířka (mm)": 1000, "Cena/m2": 518.0, "Max délka tabule (mm)": 2000},
-    {"Materiál": "tabule PVC 0,6x1000x2000 ROOFPLAN 7035", "Interní kód SI": "0150PVC0037035", "Šířka (mm)": 1000, "Cena/m2": 591.0, "Max délka tabule (mm)": 2000}
-]
-
-DEFAULT_PRVKY = [
-    {"Typ prvku": "Závětrná lišta spodní", "Ohyby": 6},
-    {"Typ prvku": "Závětrná lišta pultová", "Ohyby": 6},
-    {"Typ prvku": "Okapnice", "Ohyby": 2},
-    {"Typ prvku": "Lemování ke zdi", "Ohyby": 3},
-    {"Typ prvku": "Úžlabí", "Ohyby": 3},
-    {"Typ prvku": "Úžlabí s drážkou", "Ohyby": 5},
-    {"Typ prvku": "Atikový plech", "Ohyby": 4},
-    {"Typ prvku": "L lišta", "Ohyby": 2},
-    {"Typ prvku": "Stěnová lišta", "Ohyby": 2},
-    {"Typ prvku": "Parapet", "Ohyby": 3},
-    {"Typ prvku": "Parapet včetně boků", "Ohyby": 3},
-    {"Typ prvku": "Atypický výrobek", "Ohyby": 9}
-]
-
-def load_data():
-    if os.path.exists(DB_FILE):
-        try:
-            mat_df = pd.read_json(DB_FILE)
-        except:
-            mat_df = pd.DataFrame(DEFAULT_MATERIALY)
-    else:
-        mat_df = pd.DataFrame(DEFAULT_MATERIALY)
-        
-    if os.path.exists(PRVKY_FILE):
-        try:
-            prv_df = pd.read_json(PRVKY_FILE)
-        except:
-            prv_df = pd.DataFrame(DEFAULT_PRVKY)
-    else:
-        prv_df = pd.DataFrame(DEFAULT_PRVKY)
-        
-    return mat_df, prv_df
-
-def save_data(mat_df, prv_df):
-    mat_df.to_json(DB_FILE, orient='records', force_ascii=False)
-    prv_df.to_json(PRVKY_FILE, orient='records', force_ascii=False)
 
 # ==========================================
 # HLAVNÍ APLIKACE
@@ -230,14 +166,44 @@ def pack_module_strips(items, coil_w, max_l, allow_rotation=True):
             
     return formatted_bins
 
-# --- INICIALIZACE NASTAVENÍ A DAT Z TRVALÉHO ÚLOŽIŠTĚ ---
-if 'materialy_df' not in st.session_state or 'prvky_df' not in st.session_state:
-    m_df, p_df = load_data()
-    st.session_state.materialy_df = m_df
-    st.session_state.prvky_df = p_df
-
+# --- INICIALIZACE NASTAVENÍ A DAT (VČETNĚ NOVÝCH CEN Z CENIK.CSV) ---
 if 'config' not in st.session_state:
     st.session_state.config = {"cena_ohyb": 10.0, "max_delka": 4000, "presah": 40, "povolit_rotaci": True}
+
+if 'materialy_df' not in st.session_state:
+    st.session_state.materialy_df = pd.DataFrame([
+        {"Materiál": "svitek POZINK 0,55x1000mm", "Interní kód SI": "0160P003", "Šířka (mm)": 1000, "Cena/m2": 200.0, "Max délka tabule (mm)": 50000},
+        {"Materiál": "svitek POZINK 0,55x670mm", "Interní kód SI": "0160P002", "Šířka (mm)": 670, "Cena/m2": 218.0, "Max délka tabule (mm)": 50000},
+        {"Materiál": "svitek POZINK 0,5x1250mm PES STANDARD BARVY O+SF", "Interní kód SI": "0160LP0107016O+SF", "Šířka (mm)": 1250, "Cena/m2": 282.0, "Max délka tabule (mm)": 50000},
+        {"Materiál": "svitek POZINK 0,5x1250mm PES NESTANDARD O+SF", "Interní kód SI": "0160LP0109010O+SF", "Šířka (mm)": 1250, "Cena/m2": 301.0, "Max délka tabule (mm)": 50000},
+        {"Materiál": "Comax FALC POZINK 0,5x620mm PES  šedá J+SF", "Interní kód SI": "0160LP0017016J+SF", "Šířka (mm)": 620, "Cena/m2": 456.0, "Max délka tabule (mm)": 50000},
+        {"Materiál": "svitek TITANZINEK 0,6x1000mm", "Interní kód SI": "0160T003", "Šířka (mm)": 1000, "Cena/m2": 672.0, "Max délka tabule (mm)": 50000},
+        {"Materiál": "svitek TITANZINEK 0,6x670mm", "Interní kód SI": "0160T002", "Šířka (mm)": 670, "Cena/m2": 672.0, "Max délka tabule (mm)": 50000},
+        {"Materiál": "svitek MĚĎ 0,55x1000mm", "Interní kód SI": "0160M011000", "Šířka (mm)": 1000, "Cena/m2": 2347.0, "Max délka tabule (mm)": 50000},
+        {"Materiál": "svitek MĚĎ 0,55x670mm", "Interní kód SI": "0160M010670", "Šířka (mm)": 670, "Cena/m2": 2347.0, "Max délka tabule (mm)": 50000},
+        {"Materiál": "PREFA svitek CLR 0,7x1000 PE", "Interní kód SI": "65P31105", "Šířka (mm)": 1000, "Cena/m2": 490.0, "Max délka tabule (mm)": 30000},
+        {"Materiál": "PREFA svitek Prefalz 0,7x1000 hladký", "Interní kód SI": "65P40100", "Šířka (mm)": 1000, "Cena/m2": 619.0, "Max délka tabule (mm)": 30000},
+        {"Materiál": "PREFA svitek  Prefalz 0,7x650 hladký", "Interní kód SI": "65P40200", "Šířka (mm)": 650, "Cena/m2": 619.0, "Max délka tabule (mm)": 50000},
+        {"Materiál": "Comax FALC AL 0,7x600mm", "Interní kód SI": "0160ALCO0706007016", "Šířka (mm)": 600, "Cena/m2": 694.0, "Max délka tabule (mm)": 50000},
+        {"Materiál": "tabule AL 0,6x1000x2000 PES jednostranná s folií", "Interní kód SI": "0150AL06100020007016J+SF", "Šířka (mm)": 1000, "Cena/m2": 518.0, "Max délka tabule (mm)": 2000},
+        {"Materiál": "tabule PVC 0,6x1000x2000 ROOFPLAN 7035", "Interní kód SI": "0150PVC0037035", "Šířka (mm)": 1000, "Cena/m2": 591.0, "Max délka tabule (mm)": 2000}
+    ])
+
+if 'prvky_df' not in st.session_state:
+    st.session_state.prvky_df = pd.DataFrame([
+        {"Typ prvku": "Závětrná lišta spodní", "Ohyby": 6},
+        {"Typ prvku": "Závětrná lišta pultová", "Ohyby": 6},
+        {"Typ prvku": "Okapnice", "Ohyby": 2},
+        {"Typ prvku": "Lemování ke zdi", "Ohyby": 3},
+        {"Typ prvku": "Úžlabí", "Ohyby": 3},
+        {"Typ prvku": "Úžlabí s drážkou", "Ohyby": 5},
+        {"Typ prvku": "Atikový plech", "Ohyby": 4},
+        {"Typ prvku": "L lišta", "Ohyby": 2},
+        {"Typ prvku": "Stěnová lišta", "Ohyby": 2},
+        {"Typ prvku": "Parapet", "Ohyby": 3},
+        {"Typ prvku": "Parapet včetně boků", "Ohyby": 3},
+        {"Typ prvku": "Atypický výrobek", "Ohyby": 9}
+    ])
 
 if 'zakazka' not in st.session_state:
     st.session_state.zakazka = []
@@ -266,19 +232,11 @@ with tab_nastaveni:
 
 with tab_data:
     st.header("⚙️ Správa dat (Ceník a materiály)")
-    # Omezení práv pouze na administrátora pro tabulku dat s trvalým uložením
+    # Omezení práv pouze na administrátora pro tabulku dat
     if st.session_state.current_user == "admin@stavinvest.cz":
-        st.write("Jako administrátor můžete upravovat ceny a materiály. Po úpravě klikněte na tlačítko pro trvalé uložení na server.")
-        
-        edited_mat = st.data_editor(st.session_state.materialy_df, num_rows="dynamic", key="em", use_container_width=True)
-        edited_prv = st.data_editor(st.session_state.prvky_df, num_rows="dynamic", key="ep", use_container_width=True)
-        
-        if st.button("💾 Uložit změny trvale na server", type="primary"):
-            st.session_state.materialy_df = edited_mat
-            st.session_state.prvky_df = edited_prv
-            save_data(edited_mat, edited_prv)
-            st.success("Ceník byl úspěšně a trvale uložen na serveru pro všechny uživatele!")
-            st.rerun()
+        st.write("Jako administrátor můžete upravovat ceny a materiály. (Pozn.: Změny platí do restartu aplikace.)")
+        st.session_state.materialy_df = st.data_editor(st.session_state.materialy_df, num_rows="dynamic", key="em", use_container_width=True)
+        st.session_state.prvky_df = st.data_editor(st.session_state.prvky_df, num_rows="dynamic", key="ep", use_container_width=True)
     else:
         st.warning("Pohled pro čtení. Úpravy ceníku může provádět pouze administrátor.")
         st.dataframe(st.session_state.materialy_df, use_container_width=True)
