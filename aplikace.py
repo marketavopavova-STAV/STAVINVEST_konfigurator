@@ -183,7 +183,7 @@ if 'config' not in st.session_state:
         with open(FILE_CONF, "r", encoding="utf-8") as f:
             st.session_state.config.update(json.load(f))
 
-# Načtení materiálů (s aktualizovanými cenami)
+# Načtení materiálů
 if 'materialy_df' not in st.session_state:
     if os.path.exists(FILE_MAT):
         st.session_state.materialy_df = pd.read_csv(FILE_MAT)
@@ -458,6 +458,7 @@ with tab_kalk:
                 total_bez = c_mat + cena_prace + cena_priplatky
                 total_s = total_bez * 1.21
 
+                # Zjednodušená tabulka na hlavní stránce (odstraněna plocha dílů a metry odvinu)
                 md_table = f"""
 | Položka | Hodnota |
 | :--- | ---: |
@@ -473,6 +474,7 @@ with tab_kalk:
                 # --- EXCEL EXPORT ---
                 buf = io.BytesIO()
                 with pd.ExcelWriter(buf, engine='openpyxl') as wr:
+                    # Tabulka 1: Základní info
                     info_df = pd.DataFrame([
                         {"Parametr": "Odběratel / Zakázka", "Hodnota": st.session_state.odberatel},
                         {"Parametr": "Materiál", "Hodnota": st.session_state.v_mat},
@@ -480,13 +482,16 @@ with tab_kalk:
                     ])
                     info_df.to_excel(wr, sheet_name='Zadání', index=False, startrow=0)
                     
+                    # Příprava položek s výpočty
                     df_out = pd.DataFrame(st.session_state.zakazka)
                     df_out.insert(0, 'Řádek', range(1, len(df_out) + 1))
                     
                     cena_ohyb_val = float(st.session_state.config.get("cena_ohyb", 12.0))
                     
+                    # Sloupec pro výpočet práce
                     df_out['Cena za ohyby (Kč)'] = df_out['Ohyby'] * cena_ohyb_val * df_out['Metrů'] * df_out['Kusů']
                     
+                    # Řádek "CELKEM" pod tabulkou položek
                     total_row = {col: "" for col in df_out.columns}
                     total_row['Řádek'] = "CELKEM"
                     total_row['Atyp příplatek/ks (Kč)'] = cena_priplatky
@@ -495,6 +500,7 @@ with tab_kalk:
                     df_out = pd.concat([df_out, pd.DataFrame([total_row])], ignore_index=True)
                     df_out.to_excel(wr, sheet_name='Zadání', index=False, startrow=5)
                     
+                    # Finální kalkulace cen přímo na listu "Zadání"
                     kalkulace_startrow = 5 + len(df_out) + 2 
                     fin_data = [
                         {"Finální kalkulace": "Celkem odvinout z role (m)", "Hodnota / Částka": float(st.session_state.tot_odvinuto)},
@@ -507,12 +513,14 @@ with tab_kalk:
                     ]
                     pd.DataFrame(fin_data).to_excel(wr, sheet_name='Zadání', index=False, startrow=kalkulace_startrow)
 
+                    # Výrobní souhrn (moduly) - hned pod kalkulací
                     prod_startrow = kalkulace_startrow + len(fin_data) + 2
                     prod_data = [
                         {"Výrobní parametry": "Počet Výrobních Modulů (ks)", "Hodnota": st.session_state.sumar["Počet Modulů (ks)"]}
                     ]
                     pd.DataFrame(prod_data).to_excel(wr, sheet_name='Zadání', index=False, startrow=prod_startrow)
                     
+                    # Aplikace formátování čísel pro Excel
                     wb = wr.book
                     ws = wr.sheets['Zadání']
                     for col in ws.columns:
@@ -528,6 +536,7 @@ with tab_kalk:
                                 pass
                         ws.column_dimensions[column_letter].width = (max_length + 2)
                     
+                    # Nákresy
                     if st.session_state.get('generated_figs'):
                         ws_img = wb.create_sheet('Výrobní nákresy')
                         ws_img.column_dimensions['A'].width = 50 
